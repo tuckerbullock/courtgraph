@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import sys
-from typing import Sequence, TextIO
+from collections.abc import Sequence
+from pathlib import Path
+from typing import TextIO
 
-from courtgraph.health import run_health_checks
+from courtgraph.health import HealthReport, run_health_checks
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _render_human(result: dict[str, object], output: TextIO) -> None:
+def _render_human(result: HealthReport, output: TextIO) -> None:
     """Render a compact result for a developer at the terminal."""
 
     print(f"CourtGraph {result['courtgraph_version']}: {result['status']}", file=output)

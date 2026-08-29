@@ -25,5 +25,25 @@ dependencies = []
 [project.scripts]
 courtgraph = "courtgraph.cli:main"
 
+[dependency-groups]
+dev = [
+  "ruff==0.16.5",
+  "mypy==2.3.1",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/courtgraph"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "tests"]
+mypy_path = "src"
+strict = true
