@@ -19,15 +19,9 @@ Stage 0 — Research contract and repository foundation.
 - Added shared `AGENTS.md` instructions for coding agents working in the repository.
 - Added a concise Claude Code entry point that imports the shared instructions.
 - Added `docs/CURRENT_TASK.md` for durable single-task state and cross-agent handoffs.
-- Adopted `uv` with a `uv.lock` for a locked, reproducible environment (local default Python 3.13).
+- Adopted `uv` with a committed `uv.lock` for a locked, reproducible environment (local default Python 3.13).
 - Added Ruff (lint + format) and mypy (`strict`) configuration; introduced typed health-report structures so `mypy --strict` passes.
-
-## In progress
-
-- Locked development environment and automated CI. Implementation and local
-  verification are done under actual CPython 3.11.16 and 3.13.15; `uv.lock` and
-  `.github/workflows/ci.yml` are staged. Commit, push, and the first GitHub
-  Actions run are still pending. See `docs/CURRENT_TASK.md`.
+- Added GitHub Actions CI (`.github/workflows/ci.yml`) verifying the lockfile, a clean install, `courtgraph doctor`, unit tests, compilation, Ruff lint, Ruff format, and mypy on Python 3.11 and 3.13. Run #1 passed both legs; actions are pinned to full commit SHAs and the workflow runs with `permissions: contents: read`.
 
 ## Not started
 
@@ -60,9 +54,8 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 
 ## Next verifiable outcome
 
-Commit and push `task/dev-environment-ci` and confirm both CI matrix legs pass.
-The next single task after that is to create `RESEARCH_CONTRACT.md` (a concise
-research contract). `DATA_SOURCES.md` and the first architecture decision record
+Create `RESEARCH_CONTRACT.md` (a concise research contract). This is the only
+queued next task; `DATA_SOURCES.md` and the first architecture decision record
 are separate later tasks.
 
 ## Governing document

@@ -28,8 +28,8 @@ The first implemented capability is a dependency-free project health check that 
 
 CourtGraph supports Python 3.11 and newer and uses [`uv`](https://docs.astral.sh/uv/)
 to manage a locked, reproducible development environment. The local default
-interpreter is Python 3.13; the CI workflow runs the checks below on both
-3.11 and 3.13.
+interpreter is Python 3.13; GitHub Actions CI runs the checks below on both
+3.11 and 3.13, and the first run passed on both.
 
 Install `uv` (see the [installation guide](https://docs.astral.sh/uv/getting-started/installation/)),
 then, from the repository root, create the environment from the committed lockfile:
@@ -101,7 +101,7 @@ The project will treat chemistry as a model-dependent predictive quantity, not a
 
 ## Next milestone
 
-The locked `uv` environment and CI workflow are implemented and verified locally on Python 3.11 and 3.13; committing, pushing, and the first CI run are pending. The next single task is a concise research contract (`RESEARCH_CONTRACT.md`). The first major research milestone remains a trustworthy two-season possession/stint dataset followed by a leakage-safe ridge RAPM baseline.
+The locked `uv` environment and GitHub Actions CI are in place, with the first CI run passing on Python 3.11 and 3.13. The next single task is a concise research contract (`RESEARCH_CONTRACT.md`). The first major research milestone remains a trustworthy two-season possession/stint dataset followed by a leakage-safe ridge RAPM baseline.
 
 ## License
 
