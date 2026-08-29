@@ -10,6 +10,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+CLAUDE.local.md
 
 # Data and model artifacts
 data/raw/

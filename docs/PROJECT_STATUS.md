@@ -16,6 +16,9 @@ Stage 0 — Research contract and repository foundation.
 - Added the initial Python package skeleton and versioned CLI entry point.
 - Added a dependency-free `courtgraph doctor` command with human and JSON output.
 - Added bootstrap tests for runtime, repository layout, CLI output, and failure behavior.
+- Added shared `AGENTS.md` instructions for coding agents working in the repository.
+- Added a concise Claude Code entry point that imports the shared instructions.
+- Added `docs/CURRENT_TASK.md` for durable single-task state and cross-agent handoffs.
 
 ## Not started
 

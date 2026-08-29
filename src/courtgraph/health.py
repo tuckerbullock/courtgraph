@@ -12,8 +12,11 @@ from courtgraph import __version__
 
 MINIMUM_PYTHON = (3, 11)
 REQUIRED_PROJECT_PATHS = (
+    Path("AGENTS.md"),
+    Path("CLAUDE.md"),
     Path("README.md"),
     Path("pyproject.toml"),
+    Path("docs/CURRENT_TASK.md"),
     Path("docs/MASTER_PLAN.md"),
     Path("docs/PROJECT_STATUS.md"),
 )

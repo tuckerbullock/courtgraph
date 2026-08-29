@@ -9,7 +9,11 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from courtgraph.cli import main
-from courtgraph.health import check_project_layout, check_python_version
+from courtgraph.health import (
+    REQUIRED_PROJECT_PATHS,
+    check_project_layout,
+    check_python_version,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +34,13 @@ class PythonVersionCheckTests(unittest.TestCase):
 
 
 class ProjectLayoutCheckTests(unittest.TestCase):
+    def test_shared_agent_handoff_files_are_required(self) -> None:
+        required = {str(path) for path in REQUIRED_PROJECT_PATHS}
+
+        self.assertTrue(
+            {"AGENTS.md", "CLAUDE.md", "docs/CURRENT_TASK.md"}.issubset(required)
+        )
+
     def test_repository_layout_passes(self) -> None:
         result = check_project_layout(PROJECT_ROOT)
 

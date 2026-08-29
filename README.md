@@ -16,7 +16,11 @@ The repository currently contains the complete operating blueprint for the proje
 
 - [Master research and engineering plan](docs/MASTER_PLAN.md)
 - [Current project status](docs/PROJECT_STATUS.md)
+- [Active-task and agent handoff](docs/CURRENT_TASK.md)
 - [Contributing and research-integrity rules](CONTRIBUTING.md)
+- [Shared coding-agent instructions](AGENTS.md)
+
+`CLAUDE.md` imports the shared instructions so Claude Code and other agents operate from the same project standards rather than relying on separate chat histories.
 
 The first implemented capability is a dependency-free project health check that verifies the supported Python runtime and required governing files.
 
