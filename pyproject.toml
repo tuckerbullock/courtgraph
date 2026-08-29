@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "courtgraph"
+version = "0.1.0"
+description = "Research-grade NBA lineup chemistry modeling and evaluation."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Tucker Bullock" },
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = []
+
+[project.scripts]
+courtgraph = "courtgraph.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/courtgraph"]

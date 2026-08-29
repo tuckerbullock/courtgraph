@@ -10,13 +10,37 @@ The project will separate lineup value into individual talent, player interactio
 
 ## Current status
 
-**Planning and research design only. No implementation code has been started.**
+**Stage 0: project foundation. No basketball data or modeling code has been started.**
 
 The repository currently contains the complete operating blueprint for the project:
 
 - [Master research and engineering plan](docs/MASTER_PLAN.md)
 - [Current project status](docs/PROJECT_STATUS.md)
 - [Contributing and research-integrity rules](CONTRIBUTING.md)
+
+The first implemented capability is a dependency-free project health check that verifies the supported Python runtime and required governing files.
+
+## Development bootstrap
+
+CourtGraph supports Python 3.11 and newer. From the repository root, run the health check directly from the source checkout:
+
+```bash
+PYTHONPATH=src python3 -m courtgraph doctor
+```
+
+For machine-readable output:
+
+```bash
+PYTHONPATH=src python3 -m courtgraph doctor --json
+```
+
+Run the current test suite without installing third-party dependencies:
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
+
+The package declares a standard `courtgraph` console entry point in `pyproject.toml`. A locked development environment and automated CI are separate upcoming foundation tasks.
 
 ## Planned research progression
 
@@ -53,7 +77,7 @@ The project will treat chemistry as a model-dependent predictive quantity, not a
 
 ## Next milestone
 
-Build and audit a trustworthy two-season possession/stint dataset, then reproduce a leakage-safe ridge RAPM baseline.
+Complete the reproducible development environment and research contract before beginning data acquisition. The first major research milestone remains a trustworthy two-season possession/stint dataset followed by a leakage-safe ridge RAPM baseline.
 
 ## License
 

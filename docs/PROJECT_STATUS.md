@@ -13,6 +13,9 @@ Stage 0 — Research contract and repository foundation.
 - Defined the model ladder and milestone exit criteria.
 - Defined leakage-safe unseen-lineup, unseen-pair, temporal, and transaction evaluations.
 - Defined the initial product and API concepts.
+- Added the initial Python package skeleton and versioned CLI entry point.
+- Added a dependency-free `courtgraph doctor` command with human and JSON output.
+- Added bootstrap tests for runtime, repository layout, CLI output, and failure behavior.
 
 ## Not started
 
@@ -22,9 +25,18 @@ Stage 0 — Research contract and repository foundation.
 - Chemistry models
 - Dashboard or API implementation
 
+## Current verification
+
+Run from the repository root:
+
+```bash
+PYTHONPATH=src python3 -m courtgraph doctor
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
+
 ## Next verifiable outcome
 
-Create the repository skeleton and research contract, validate data-source access and terms, then acquire a small immutable development snapshot.
+Create and lock the reproducible development environment, then formalize the concise research contract before evaluating data-source access and terms.
 
 ## Governing document
 
