@@ -4,51 +4,111 @@ Last updated: 2026-08-29
 
 ## State
 
-No implementation task is active. The repository is ready for a new single-task assignment.
+Implementation and local verification complete. Commit, push, and the first
+GitHub Actions run remain pending. No new implementation task should begin until
+those are done and the user assigns the next task.
 
-## Most recently completed task
+## Active task
 
-### Cross-agent context and handoff layer
+### Locked reproducible development environment and automated CI
 
-Objective:
+## Objective
 
-> Make project context transferable between Codex, Claude Code, and other repository-aware coding agents without relying on chat history.
+Give CourtGraph a locked, reproducible development environment and a GitHub
+Actions workflow that verifies every contribution automatically.
 
-Completed:
+## Acceptance criteria
 
-- Added `AGENTS.md` as the vendor-neutral source of project working rules.
-- Added `CLAUDE.md` as Claude Code’s concise entry point importing the shared rules.
-- Added this file as the durable current-task and handoff ledger.
-- Kept the full master plan out of automatically loaded agent context.
+- `uv` manages the environment; `uv.lock` is committed and current.
+- `requires-python = ">=3.11"` unchanged; local default Python 3.13; CI matrix 3.11 + 3.13.
+- Ruff (lint + format) and mypy (`strict`) configured and passing.
+- The `unittest` suite is retained (no pytest migration).
+- No basketball / scientific / modeling / notebook / API / dashboard dependencies added.
+- No pre-commit hooks.
+- CI verifies: lockfile current + clean install, `courtgraph doctor`, unit tests,
+  compilation, Ruff lint, Ruff format check, mypy.
+- `README.md`, `docs/PROJECT_STATUS.md`, `docs/CURRENT_TASK.md` updated.
 
-Acceptance criteria:
+## Decisions and assumptions
 
-- Shared instructions identify the project purpose, sources of truth, one-task workflow, verification commands, and research-integrity constraints.
-- Claude Code is directed to import the shared instructions and read only relevant master-plan sections.
-- The handoff ledger can distinguish active, completed, blocked, and unassigned states.
-- Existing CourtGraph health and test commands still pass.
+- Dev tools live in a PEP 735 `[dependency-groups]` `dev` group, pinned exactly
+  (`ruff==0.16.5`, `mypy==2.3.1`); `courtgraph` keeps zero runtime dependencies.
+- `mypy --strict` required typed structures for the health report: added
+  `CheckResult` / `HealthReport` `TypedDict`s in `src/courtgraph/health.py` and
+  updated `src/courtgraph/cli.py` signatures. No CLI output, exit-code, JSON
+  shape, or `schema_version` change.
+- Ruff auto-fixed import ordering and applied `collections.abc` imports (`UP035`)
+  in the existing modules; formatting is Ruff's.
+- CI pins `uv` to `0.12.7` (matching the version used to generate the lockfile)
+  and enables its cache. Workflow runs on all branch pushes and PRs.
+- No CI status badge added (repository slug not confirmed).
+
+## Files changed
+
+- `pyproject.toml`: `dev` dependency group; `[tool.ruff]` / `[tool.mypy]` config.
+- `.python-version`: new; `3.13`.
+- `uv.lock`: new; staged, commit pending.
+- `src/courtgraph/health.py`: `CheckResult` / `HealthReport` TypedDicts; typed return.
+- `src/courtgraph/cli.py`: typed `_render_human` signature; import tidy.
+- `src/courtgraph/__main__.py`, `tests/test_health.py`: Ruff import ordering only.
+- `.github/workflows/ci.yml`: new; `verify` job, Python 3.11 + 3.13 matrix,
+  job-level `UV_PYTHON` plus an interpreter-assertion step.
+- `README.md`: `uv` bootstrap instructions; Stage 0 next-step note.
+- `AGENTS.md`: refreshed verification command block and engineering baseline.
+- `docs/PROJECT_STATUS.md`: env/tooling in Completed, CI in a new "In progress"
+  section; verification block refreshed.
+- `docs/CURRENT_TASK.md`: this handoff.
+
+## Verification
+
+Run on this machine with `uv 0.12.7`, under actual CPython 3.11.16 and actual
+CPython 3.13.15 (interpreter asserted with `sys.version_info[:2]` each run;
+the dependency-free path additionally checked on the system CPython 3.13.1):
+
+- `uv lock --locked`: passes (lockfile current).
+- `uv sync --locked` (`UV_PYTHON=3.11` and `UV_PYTHON=3.13`): passes.
+- `uv run courtgraph doctor`: `healthy` on both.
+- `uv run python -m unittest discover -s tests -v`: 7 tests, OK on both.
+- `uv run python -m compileall -q src tests`: passes on both.
+- `uv run ruff check .`: All checks passed on both.
+- `uv run ruff format --check .`: 12 files already formatted on both.
+- `uv run mypy`: Success, no issues in 5 source files on both.
+- Dependency-free: `PYTHONPATH=src python3 -m courtgraph doctor` and
+  `... -m unittest discover -s tests` still pass.
+
+## Risks or blockers
+
+- Commit and push have not happened; the branch is local only.
+- CI has not been executed on GitHub yet. The workflow mirrors the locally
+  verified commands and now forces the matrix interpreter via job-level
+  `UV_PYTHON` plus an assertion step, but the first real run must still be
+  confirmed after push.
+- `uv` must be installed by any contributor or agent before the `uv run`
+  commands work.
+
+## Exact next action
+
+1. Commit the staged changes on `task/dev-environment-ci` (logical commits).
+2. Push the branch and confirm both CI matrix legs (3.11 and 3.13) pass.
+3. Then update this file's State to `Complete`.
+
+After that, the user assigns the next single task. The sole queued Stage 0
+candidate is: **create `RESEARCH_CONTRACT.md`** (a concise research contract).
+`DATA_SOURCES.md` and the first architecture decision record are separate future
+tasks. No agent should begin any of them until the user activates it.
 
 ## Current verified baseline
 
-- Branch: `main`
-- Python package version: `0.1.0`
-- Implemented capability: `courtgraph doctor`
-- Basketball data acquisition: not started
-- Possession/stint construction: not started
-- Statistical or ML models: not started
-- Dashboard/API: not started
-
-Verification commands:
-
-```bash
-PYTHONPATH=src python3 -m courtgraph doctor
-PYTHONPATH=src python3 -m unittest discover -s tests -v
-python3 -m compileall -q src tests
-```
-
-## Next candidate task
-
-Create a locked, reproducible development environment and automated GitHub Actions verification. This is a candidate only; no agent should begin it until the user activates it.
+- Branch: `task/dev-environment-ci` (off `main`; not committed, not pushed).
+- Python package version: `0.1.0`.
+- Environment: `uv` + committed `uv.lock`; local default Python 3.13.
+- Dev tooling: `ruff==0.16.5`, `mypy==2.3.1` (strict), both passing.
+- CI: `.github/workflows/ci.yml`, Python 3.11 + 3.13, not yet run on GitHub.
+- Implemented capability: `courtgraph doctor`.
+- Basketball data acquisition: not started.
+- Possession/stint construction: not started.
+- Statistical or ML models: not started.
+- Dashboard/API: not started.
 
 ## Handoff template
 

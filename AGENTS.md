@@ -51,21 +51,32 @@ Never reset, discard, overwrite, or reformat unrelated work. Never force-push un
 
 ## Current engineering baseline
 
-- Supported Python: 3.11 and newer.
+- Supported Python: 3.11 and newer; local default 3.13.
+- Environment manager: `uv`, with a committed `uv.lock`. Dev tools (`ruff`, `mypy`) live in the `dev` dependency group; `courtgraph` itself has no runtime dependencies.
 - Package layout: `src/courtgraph/`.
 - Tests currently use the Python standard library `unittest`.
 - No basketball data or modeling implementation exists yet.
-- Third-party dependencies must earn their inclusion and be pinned through the chosen environment workflow.
+- Third-party dependencies must earn their inclusion and be pinned exactly in `pyproject.toml` and `uv.lock`.
+- CI (`.github/workflows/ci.yml`) runs every verification command below on Python 3.11 and 3.13.
 
 Current verification commands:
 
 ```bash
-PYTHONPATH=src python3 -m courtgraph doctor
-PYTHONPATH=src python3 -m unittest discover -s tests -v
-python3 -m compileall -q src tests
+uv sync --locked
+uv run courtgraph doctor
+uv run python -m unittest discover -s tests -v
+uv run python -m compileall -q src tests
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
 ```
 
-Keep the dependency-free health command working even after the scientific environment grows.
+The dependency-free path must keep working even as the scientific environment grows:
+
+```bash
+PYTHONPATH=src python3 -m courtgraph doctor
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
 
 ## Engineering standards
 

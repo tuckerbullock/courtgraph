@@ -2,13 +2,33 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from pathlib import Path
 import platform
 import sys
-from typing import Any, Iterable
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TypedDict
 
 from courtgraph import __version__
+
+
+class CheckResult(TypedDict):
+    """A single health check rendered as a JSON-serializable mapping."""
+
+    name: str
+    passed: bool
+    detail: str
+
+
+class HealthReport(TypedDict):
+    """The versioned result document returned by :func:`run_health_checks`."""
+
+    schema_version: int
+    courtgraph_version: str
+    status: str
+    python_implementation: str
+    checks: list[CheckResult]
+
 
 MINIMUM_PYTHON = (3, 11)
 REQUIRED_PROJECT_PATHS = (
@@ -30,10 +50,10 @@ class HealthCheck:
     passed: bool
     detail: str
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> CheckResult:
         """Return a stable JSON-serializable representation."""
 
-        return asdict(self)
+        return {"name": self.name, "passed": self.passed, "detail": self.detail}
 
 
 def check_python_version(
@@ -77,7 +97,7 @@ def check_project_layout(
     )
 
 
-def run_health_checks(project_root: Path) -> dict[str, Any]:
+def run_health_checks(project_root: Path) -> HealthReport:
     """Run all bootstrap checks and return a versioned result document."""
 
     checks = (

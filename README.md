@@ -26,25 +26,45 @@ The first implemented capability is a dependency-free project health check that 
 
 ## Development bootstrap
 
-CourtGraph supports Python 3.11 and newer. From the repository root, run the health check directly from the source checkout:
+CourtGraph supports Python 3.11 and newer and uses [`uv`](https://docs.astral.sh/uv/)
+to manage a locked, reproducible development environment. The local default
+interpreter is Python 3.13; the CI workflow runs the checks below on both
+3.11 and 3.13.
+
+Install `uv` (see the [installation guide](https://docs.astral.sh/uv/getting-started/installation/)),
+then, from the repository root, create the environment from the committed lockfile:
+
+```bash
+uv sync
+```
+
+Run the checks that CI runs:
+
+```bash
+uv run courtgraph doctor
+uv run python -m unittest discover -s tests -v
+uv run python -m compileall -q src tests
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+```
+
+For machine-readable health output:
+
+```bash
+uv run courtgraph doctor --json
+```
+
+The only third-party packages are the developer tools `ruff` and `mypy`
+(pinned in the `dev` dependency group). The `courtgraph` package itself has no
+runtime dependencies, so the health check and test suite also run without `uv`:
 
 ```bash
 PYTHONPATH=src python3 -m courtgraph doctor
-```
-
-For machine-readable output:
-
-```bash
-PYTHONPATH=src python3 -m courtgraph doctor --json
-```
-
-Run the current test suite without installing third-party dependencies:
-
-```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-The package declares a standard `courtgraph` console entry point in `pyproject.toml`. A locked development environment and automated CI are separate upcoming foundation tasks.
+The package declares a standard `courtgraph` console entry point in `pyproject.toml`.
 
 ## Planned research progression
 
@@ -81,7 +101,7 @@ The project will treat chemistry as a model-dependent predictive quantity, not a
 
 ## Next milestone
 
-Complete the reproducible development environment and research contract before beginning data acquisition. The first major research milestone remains a trustworthy two-season possession/stint dataset followed by a leakage-safe ridge RAPM baseline.
+The locked `uv` environment and CI workflow are implemented and verified locally on Python 3.11 and 3.13; committing, pushing, and the first CI run are pending. The next single task is a concise research contract (`RESEARCH_CONTRACT.md`). The first major research milestone remains a trustworthy two-season possession/stint dataset followed by a leakage-safe ridge RAPM baseline.
 
 ## License
 

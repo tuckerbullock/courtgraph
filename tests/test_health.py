@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from io import StringIO
 import json
+import unittest
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 
 from courtgraph.cli import main
 from courtgraph.health import (
@@ -14,7 +14,6 @@ from courtgraph.health import (
     check_project_layout,
     check_python_version,
 )
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
