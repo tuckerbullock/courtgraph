@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Data and model artifacts
+data/raw/
+data/interim/
+data/processed/
+artifacts/
+checkpoints/
+mlruns/
+
+# Notebooks and local tools
+.ipynb_checkpoints/
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and temporary output
+*.log
+tmp/
+scratch/
