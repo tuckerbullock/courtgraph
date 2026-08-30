@@ -4,53 +4,88 @@ Last updated: 2026-08-29
 
 ## State
 
-Active — `RESEARCH_CONTRACT.md` drafted and revised; **pending independent
-(Codex) review**. Not committed, not pushed. No other task begins until the
-contract is reviewed and committed.
+`DATA_SOURCES.md` **v0.3 approved by Codex**. Committed on `task/data-sources`
+and opened as a PR into `main`; not merged. Prior tasks (dev environment + CI,
+research contract) are merged to `main` (PRs #1, #2).
 
 ## Objective
 
-Create a root-level `RESEARCH_CONTRACT.md` that turns the north-star question into
-a binding, falsifiable scientific specification for research cycle 1. All binding
-decisions live in that document (see its §28 decision table and §29 deferred
-questions); they are not duplicated here.
+Create a root-level `DATA_SOURCES.md` deciding how CourtGraph lawfully,
+reproducibly, and reliably obtains cycle-1 data — a research and decision
+document, not an ingestion implementation. All source records, the rubric, and
+the binding / provisional / deferred split live in that file (see §1 and §10).
 
 ## Files changed
 
-- `RESEARCH_CONTRACT.md` — new; 29 sections; the binding contract for cycle 1.
+- `DATA_SOURCES.md` — the source registry and selection decision (revised to v0.3).
 - `docs/CURRENT_TASK.md` — this handoff.
+- `docs/PROJECT_STATUS.md` — record the merged research contract and the
+  in-progress data-source decision; correct the stale "next task" line.
 
-No code, `pyproject.toml`, `uv.lock`, `.github/`, `README.md`,
-`docs/PROJECT_STATUS.md`, or data-source files changed.
+No code, `pyproject.toml`, `uv.lock`, `.github/`, `README.md`, or
+`RESEARCH_CONTRACT.md` changed. No data acquired, no ingestion code, no ADR.
+
+## What the v0.3 revision changed (applying Codex review #2)
+
+- **Sports Reference:** its terms prohibit training / fine-tuning / prompting /
+  instructing AI systems and supporting ML methods that predict / classify /
+  label / score — they do **not** expressly list "testing, benchmarking,
+  validation". The document now quotes that scope and labels the extension to
+  model validation/benchmarking as **CourtGraph's conservative inference**, not
+  quoted policy. Basketball-Reference stays rejected from the pipeline.
+- **NBA:** the terms address use connected to a website, product, or service
+  featuring a comprehensive, regularly updated statistics database. The document
+  no longer says CourtGraph's fixed-cutoff six-season private research dataset is
+  "exactly" covered — only that it **may plausibly** fall within the restriction,
+  needing legal review and possibly express consent. The conservative
+  public-release policy is retained: no Bronze or row-level NBA-derived data
+  without clearance.
+- **§8 contradiction resolved:** it now says no *provisional* choice (primary
+  provider per era, season windows, playoff handling, transaction cohort depth)
+  becomes binding until the pilot passes, while the safeguards explicitly marked
+  *binding now* in §1 (parser approach, Bronze immutability, §5.1 access policy,
+  restricted release scope, source rejections) apply immediately.
+- Two conservative inferences are now flagged as such wherever they appear
+  (scope/disclaimers bullet; §1 note; SRC-BREF; §9 item 6; Sources).
+- Unchanged from v0.2: ESPN/`hoopR` rejected (Disney terms do expressly bar
+  testing/benchmarking/validation of AI/ML tools); the interim within-NBA
+  validation stack and its acknowledged gap; the manually curated transaction
+  cohort; the §5.1 access ceiling; coverage (dev 2023-24…2025-26; cycle
+  2020-21…2025-26).
 
 ## Verification
 
-Documentation-only task; proportional checks on `task/research-contract`:
+Documentation-only task; proportional checks on `task/data-sources`:
 
-- Structure: sections 1–29 present and sequential; headings render; LaTeX
-  delimiters balanced; no tabs / trailing whitespace.
-- Reference: `docs/MASTER_PLAN.md` link resolves from repo root.
 - `git diff --check`: clean.
-- `uv run courtgraph doctor`: `healthy` (`RESEARCH_CONTRACT.md` is not a
-  required-path check).
-- `git status`: only `RESEARCH_CONTRACT.md` (new) and `docs/CURRENT_TASK.md`
-  (modified).
+- `uv run courtgraph doctor`: `healthy`; 7 unit tests OK (code untouched).
+- Structure: 10 numbered sections + scope/disclaimers + registry (10 `SRC-*`) +
+  sources; internal links resolve; no tabs / trailing whitespace.
+- `git status`: only `DATA_SOURCES.md`, `docs/CURRENT_TASK.md`, and
+  `docs/PROJECT_STATUS.md` changed.
+
+## Review outcome
+
+Codex approved `DATA_SOURCES.md` v0.3 (2026-08-29). Points from the review that
+remain open are recorded below and in `DATA_SOURCES.md` §§1, 8, 9 — they are
+downstream work (legal review, the data pilot), not blockers for merging the
+document.
 
 ## Open review concerns
 
-- Real methodological commitments to confirm against `docs/MASTER_PLAN.md`:
-  points-per-100 units with defensive β subtracted (§4); possession + stint
-  units (§6); model ladder rungs 0–7 incl. neural embeddings and Deep Sets
-  (§11); four evaluation tasks (§12); six-part evidence bar (§17).
-- §8 counterfactual estimands (pair surplus, marginal/replacement value,
-  dependency) rewritten to average over complete lineups under a declared
-  reference distribution and use same-size 5-for-5 contrasts — confirm sound.
-- Ten questions deferred to the data-source task (§29); contract not fully
-  closed until resolved by amendment.
+- NBA and Sports Reference terms pages block automated retrieval; findings are
+  from direct review and labelled as such. A human should re-confirm the exact
+  clause wording before any release decision.
+- The two conservative inferences (NBA restriction may reach the private dataset;
+  Sports Reference AI-training ban read to also cover validation) are the
+  document's most consequential judgment calls — confirm they are acceptably
+  cautious rather than over- or under-reaching.
+- The primary-source recommendation is provisional & conditional pending legal
+  review; the independent-validation-lineage gap is real and unresolved without a
+  licensed feed or written permission.
 
 ## Next action
 
-Codex reviews `RESEARCH_CONTRACT.md`. On approval: commit on
-`task/research-contract` (off `main`, which has the merged env/CI work at
-`2e92424`), open a PR into `main`. Next single task after that is
-`DATA_SOURCES.md`; do not begin until the user activates it.
+Merge the `task/data-sources` PR into `main` when the user approves. The single
+task after that is the §8 data pilot or possession-rule work (master plan §7);
+neither begins until the user activates it.
