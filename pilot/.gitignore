@@ -1,0 +1,3 @@
+# Local pilot artifacts - raw NBA responses and run output stay uncommitted
+# (DATA_SOURCES.md 5.1: keep all raw NBA responses local; 1: no Bronze in the repo).
+_local/
