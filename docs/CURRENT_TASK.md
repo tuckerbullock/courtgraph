@@ -4,9 +4,9 @@ Last updated: 2026-08-29
 
 ## State
 
-Active — `DATA_SOURCES.md` **v0.3**, revised after a second independent (Codex)
-review; **pending re-review**. Not committed, not pushed. Prior tasks (dev
-environment + CI, research contract) are merged to `main` (PRs #1, #2).
+`DATA_SOURCES.md` **v0.3 approved by Codex**. Committed on `task/data-sources`
+and opened as a PR into `main`; not merged. Prior tasks (dev environment + CI,
+research contract) are merged to `main` (PRs #1, #2).
 
 ## Objective
 
@@ -64,6 +64,13 @@ Documentation-only task; proportional checks on `task/data-sources`:
 - `git status`: only `DATA_SOURCES.md`, `docs/CURRENT_TASK.md`, and
   `docs/PROJECT_STATUS.md` changed.
 
+## Review outcome
+
+Codex approved `DATA_SOURCES.md` v0.3 (2026-08-29). Points from the review that
+remain open are recorded below and in `DATA_SOURCES.md` §§1, 8, 9 — they are
+downstream work (legal review, the data pilot), not blockers for merging the
+document.
+
 ## Open review concerns
 
 - NBA and Sports Reference terms pages block automated retrieval; findings are
@@ -79,7 +86,6 @@ Documentation-only task; proportional checks on `task/data-sources`:
 
 ## Next action
 
-Codex re-review of `DATA_SOURCES.md` v0.3. On approval: commit on
-`task/data-sources` (off `main`, at `83555f8`), open a PR into `main`. The single
+Merge the `task/data-sources` PR into `main` when the user approves. The single
 task after that is the §8 data pilot or possession-rule work (master plan §7);
 neither begins until the user activates it.
