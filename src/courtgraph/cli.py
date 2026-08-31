@@ -86,6 +86,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fit.add_argument("--json", action="store_true", help="print result as JSON")
 
+    ingest = subparsers.add_parser(
+        "ingest",
+        help="convert an offline NBA snapshot into validated stint records",
+    )
+    ingest.add_argument(
+        "--snapshot-dir",
+        type=Path,
+        required=True,
+        help="stats_nba_pbpstats/v1 snapshot directory (immutable; not modified)",
+    )
+    ingest.add_argument(
+        "--out-dir",
+        type=Path,
+        required=True,
+        help="directory for stints.jsonl, quarantine.jsonl, and manifest.json",
+    )
+    ingest.add_argument(
+        "--allow-score-mismatch",
+        action="store_true",
+        help="emit a game whose derived final score != the official total "
+        "(flagged in the manifest) instead of quarantining it",
+    )
+    ingest.add_argument("--json", action="store_true", help="print result as JSON")
+
     predict = subparsers.add_parser(
         "predict", help="decompose one lineup's predicted value with a fitted model"
     )
@@ -260,6 +284,49 @@ def _cmd_fit(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_ingest(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.ingest.pipeline import run_ingest
+    from courtgraph.ingest.policy import IngestPolicy
+    from courtgraph.ingest.snapshot import SnapshotError
+
+    policy = IngestPolicy(allow_score_mismatch=bool(args.allow_score_mismatch))
+    try:
+        result = run_ingest(args.snapshot_dir, args.out_dir, policy=policy)
+    except SnapshotError as exc:
+        print(f"ingest: invalid snapshot: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "stints_path": str(result.stints_path),
+                    "manifest_path": str(result.manifest_path),
+                    "quarantine_path": str(result.quarantine_path),
+                    "stints_written": result.stints_written,
+                    "games_accepted": result.games_accepted,
+                    "games_quarantined": result.games_quarantined,
+                    "possessions_excluded": result.possessions_excluded,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            file=stream,
+        )
+    else:
+        print(
+            f"ingest (offline, file-only): {result.stints_written} stints "
+            f"from {result.games_accepted} game(s); "
+            f"{result.games_quarantined} game(s) quarantined, "
+            f"{result.possessions_excluded} possession(s) excluded",
+            file=stream,
+        )
+        print(f"stints:     {result.stints_path}", file=stream)
+        print(f"quarantine: {result.quarantine_path}", file=stream)
+        print(f"manifest:   {result.manifest_path}", file=stream)
+    return 0 if result.stints_written > 0 else 1
+
+
 def _cmd_predict(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.chemistry.pipeline import predict_lineup
 
@@ -303,6 +370,7 @@ def _cmd_predict(args: argparse.Namespace, stream: TextIO) -> int:
 _COMMANDS = {
     "doctor": _cmd_doctor,
     "demo": _cmd_demo,
+    "ingest": _cmd_ingest,
     "fit": _cmd_fit,
     "predict": _cmd_predict,
 }

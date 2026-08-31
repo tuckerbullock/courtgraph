@@ -24,6 +24,19 @@ mlruns/
 courtgraph_demo/
 demo_report.html
 
+# NBA ingestion: real stats.nba.com snapshots, pbpstats working copies, derived
+# stint rows, and audit manifests (DATA_SOURCES.md 1 / 5.1 -- no Bronze or
+# row-level NBA-derived data in Git). `courtgraph ingest` also drops a
+# `.gitignore` (`*`) into whatever --out-dir it is given, so an arbitrary output
+# directory is self-protecting; these entries are defense in depth.
+# Hand-authored fixtures under tests/ are committed and not matched here.
+data/nba_snapshots/
+courtgraph_ingest/
+courtgraph-ingest-work-*/
+**/stints.jsonl
+**/quarantine.jsonl
+ingest_out/
+
 # Notebooks and local tools
 .ipynb_checkpoints/
 .DS_Store

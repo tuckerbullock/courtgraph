@@ -1,206 +1,202 @@
 # Current Task
 
-Last updated: 2026-08-30
+Last updated: 2026-08-31
 
 ## State
 
-Done — **synthetic lineup-chemistry vertical slice**, revised twice after Codex
-review and **approved by Codex**. One complete path through the product runs end
-to end on synthetic data. Branch `task/chemistry-mvp` off `origin/main`
-(`589b2e6`); committed, pushed, and opened as a pull request to `main`.
+Done — **offline NBA snapshot -> stint importer** (`courtgraph ingest`),
+**approved by Codex** after three review rounds. Branch `task/nba-stint-import`
+off `origin/main` (`e56dc8c`, PR #5 merged); committed, pushed, and opened as a
+pull request to `main`.
 
-Round 3 (this pass) fixed only the unseen-pair budget: `max_test_fraction` is
-now a hard upper bound for the first selected pair too (Codex reproduced
-`max_test_fraction=0` yielding 112 test stints), and an impossible budget now
-raises `UnsatisfiableSplitError` instead of returning an unusable split. The
-other four round-2 fixes are unchanged.
+Prior work merged to `main`: dev env + CI (#1), research contract (#2),
+data-source registry (#3), data-access & schema pilot (#4), synthetic
+chemistry vertical slice (#5). The parked `task/schema-contract` worktree is
+untouched.
 
-Prior work merged to `main`: dev environment + CI (#1), research contract (#2),
-data-source registry (#3), data-access & schema pilot (#4). The uncommitted
-`task/schema-contract` worktree is untouched.
+**Fixture-only.** No real NBA snapshot has been ingested — none was provided
+and none was fetched. The adapter and all 38 new tests run on hand-authored,
+`pbpstats`-parsed fixtures. Real-data validation (a permitted snapshot through
+`courtgraph ingest`, multi-game reconciliation, an independent parser) is the
+next task and is **pending**.
+
+## Codex-review revisions (round 1)
+
+1. **Snapshot deletion.** `run_ingest` now resolves `--snapshot-dir` /
+   `--out-dir` (following symlinks) and raises `SnapshotError` if either
+   contains the other; the `pbpstats` working copy is a private
+   `tempfile.mkdtemp()` directory, discarded after the run. `stage_working_copy`
+   never deletes anything.
+2. **Output gitignore.** `run_ingest` writes `<out-dir>/.gitignore` (`*`) so any
+   output directory is self-protecting; the working copy is never near a repo.
+   Verified with `git check-ignore`.
+3. **Returning-player split.** `is_split_lineup` now tracks every ten-player set
+   from the first live event onward — a player leaving, another playing live,
+   and the first returning before the shot is excluded.
+4. **Excluded-gap continuity.** Each possession carries a `sequence_index`;
+   `possessions_to_stints` breaks a stint run whenever the accepted possessions
+   are not consecutive, so spells on either side of an excluded possession are
+   never merged even when their lineups match.
+5. **Incomplete reconciliation.** `missing_context` requires an official final
+   score for **both** teams; a one-sided total quarantines the game as
+   `missing_context` even with `allow_score_mismatch`.
+6. **Override provenance.** All `overrides/*.json` are hashed; each game's
+   `input_files` includes them and the manifest records a
+   `corrections.correction_set_id`.
 
 ## Codex-review revisions (round 2)
 
-1. **Chronological order no longer trusts `game_id`.** Stint schema bumped to
-   **v2** with a required ISO `game_date`; `chronological_key` orders by
-   `game_date` (then `game_id` only as a within-day tiebreak). v1 records are
-   rejected on load. Tested with deliberately reversed game IDs.
-2. **Unseen-pair split is "structural", not "strong/trade-like".** The claim is
-   removed. A pair is admitted only if **each player keeps
-   `min_solo_train_stints` offensive training stints without the partner**;
-   `verify_split` fails if a held player is absent from training offense. The
-   `max_test_fraction` budget is a hard upper bound on the held-out size for
-   **every** candidate, the first included; when no pair fits it,
-   `make_unseen_pair_split` raises `UnsatisfiableSplitError` rather than return
-   an unusable split. Regression tests added (oversized first candidate, and the
-   zero-budget failure).
-3. **Unseen offensive player → additive-only (C = 0) everywhere.** A single
-   helper (`_offense_fully_known`) zeroes the interaction term in
-   `predict_total`, `interaction_component`, `interaction_samples`,
-   `decompose`, and `interaction_interval`, so the point value, decomposition,
-   interval, and serialized CLI output all agree. Tested across all surfaces.
-4. **`--bootstrap N` is wired through.** `run_demo` sets
-   `ChemistryConfig.n_bootstrap` from `--bootstrap`; `--bootstrap 0` produces
-   exactly zero ensemble members (verified in the saved artifact). Exact-size
-   tests for 0 and positive N.
-5. **Group uncertainty is computed at the group level.** Each bootstrap
-   member's possession-weighted group prediction is formed first, then the
-   group mean / SD / `P(C>0)` come from those group-level samples (not from
-   averaging row-level statistics).
+Output-safety hardening only. `run_ingest` now validates the snapshot
+(`load_snapshot`) **and** the destination (`_validate_destination`) before
+creating a directory or writing a byte — an `--out-dir` that resolves into the
+snapshot, exists as a non-directory, or holds a symlinked generated file is
+rejected with nothing created or mutated. An existing `<out-dir>/.gitignore` is
+**preserved** (only `/stints.jsonl` / `/quarantine.jsonl` / `/manifest.json`
+are appended when not already covered); it is written as `*` only when absent.
+Every generated-file write goes through `_writable()`, which refuses to follow
+a symlink. Regressions: existing-`.gitignore` preservation, invalid-input
+non-mutation, rejected-nested-output non-mutation, and an output symlink
+targeting snapshot metadata (three of these run on the dependency-free path).
+
+## Codex-review revisions (round 3)
+
+`_ensure_output_gitignore` only. It no longer infers protection from a bare
+`*` or an exact rule (either can be undone by a later `!` negation). Instead it
+keeps a marker-delimited block (`# BEGIN courtgraph ingest …`) of anchored
+exclusions (`/stints.jsonl` / `/quarantine.jsonl` / `/manifest.json`) and
+always (re)writes it at the **end** of the file, so Git's last-match-wins rule
+makes the generated data files ignored regardless of earlier negations. The
+block is rewritten in place, so repeated runs do not grow the file. Regressions
+(via `git check-ignore`, dependency-free): `*` then negations, exact rules then
+negations — all three data files stay ignored, unrelated caller rules survive —
+and a re-run leaves the file byte-identical.
 
 ## Objective
 
-Build one runnable vertical slice: a versioned stint format; a deterministic
-synthetic stint generator with known talent and latent compatibility;
-leakage-safe chronological / unseen-pair / unseen-lineup holdouts; an additive
-ridge baseline; a permutation-invariant low-rank player-embedding model that
-predicts unseen combinations and separates talent / interaction surplus /
-context / total; evaluation (RMSE/MAE vs the baseline for all three holdouts,
-support/exposure, approximate uncertainty); working `courtgraph demo`, `fit`,
-`predict` commands; a self-contained HTML report from `demo --report PATH`;
-deterministic tests. No web server, no live NBA sources.
+Add an executable, fixture-tested adapter that converts a stored, immutable
+snapshot of `stats.nba.com` responses into validated
+`courtgraph.chemistry.stints` records, using `pbpstats` in **file-only mode**
+as a possession/lineup reconstruction tool. No live sources, no bulk
+acquisition, no new models.
 
 ## Outcome
 
-- **`src/courtgraph/chemistry/`** (8 modules, `numpy==2.3.5` pinned + `uv.lock`
-  updated):
-  - `stints.py` — versioned (`SCHEMA_VERSION = 2`) `Stint` / `StintTable`:
-    offensive five, defensive five, `offensive_possessions`, `points_scored`, an
-    explicit ISO `game_date`, season/time, and context fields; validation;
-    `.jsonl` / `.json` IO that round-trips exactly. No NumPy dependency (keeps
-    `courtgraph doctor` clean).
-  - `synthetic.py` — deterministic generator. Known `alpha`, per-player
-    offensive/defensive talent, and a rank-`d` provision/need structure giving
-    `C_true(L_o) = sum_{i<j} (p_i·n_j + p_j·n_i)`. `with_no_interaction()` gives
-    a matched no-signal control. Returns the table **and** its `GroundTruth`.
-  - `splits.py` — `make_chronological_split` (orders by `game_date`, cuts on a
-    game boundary), `make_unseen_pair_split` (**structurally** unseen pairs:
-    every training co-play removed, each player kept individually observed,
-    every candidate held to a hard `max_test_fraction` upper bound, raising
-    `UnsatisfiableSplitError` if none fits), `make_unseen_lineup_split` (every
-    exact-set training stint removed). `verify_split` re-derives the forbidden
-    overlaps — including that each held player is still in training offense —
-    and returns violations. The leakage gate.
-  - `baseline.py` — `AdditiveRidge`: weighted ridge RAPM, separate
-    offensive/defensive talent (both signed larger-is-better), ridge strength by
-    game-blocked CV. The "sum of the parts" model.
-  - `chemistry_model.py` — `ChemistryModel`: additive skip path +
-    `LowRankInteraction` (provision/need embeddings fit by **alternating ridge
-    least squares** on the **cross-fitted** additive residual, L2 toward zero,
-    zero-sum centered over a reference lineup distribution). `C(L_o)` is a sum
-    over the offensive set → permutation invariant by construction and defined
-    for never-co-observed pairs/lineups (but forced to **C = 0** whenever any
-    offensive player is unseen). `decompose()` returns talent / interaction /
-    context / total; a block-bootstrap ensemble (size = `--bootstrap`, may be 0)
-    gives an approximate interaction interval and P(C>0). Versioned artifact
-    (`ARTIFACT_SCHEMA_VERSION = 2`).
-  - `evaluate.py` — additive vs full RMSE/MAE, micro (possession-weighted) and
-    macro (per held-out group), against realized outcomes and — for synthetic
-    data — the known truth; approximate game-block-bootstrap interval on the
-    RMSE difference; **group-level** interaction mean / SD / P(C>0) (each
-    bootstrap member's possession-weighted group prediction first, then the
-    across-member statistics); per-group exposure and novelty class;
-    parameter-recovery correlations.
-  - `report.py` — self-contained HTML (inline CSS + inline SVG, no JS, no
-    external assets), banner-labeled synthetic. `artifact.py`, `pipeline.py`.
-- **CLI** (`src/courtgraph/cli.py`): `courtgraph demo [--report PATH]
-  [--out-dir DIR] [--seed N] [--json]`, `courtgraph fit --input ... --model-out
-  ... [--rank N] [--evaluate]`, `courtgraph predict --model ... --offense ...
-  --defense ... [--context k=v]`. `doctor` still imports no third-party package.
-- **Tests** (`tests/test_chemistry_*.py`, 71 cases): decomposition identity
-  (T+C+K == V exactly), permutation invariance over offense and defense,
-  serialization round-trip (fit → save → load → identical predictions),
-  leakage-safe splits **and** that `verify_split` catches an injected leaked
-  game / pair co-play / exact lineup / held player missing from training,
-  chronological order with misleading `game_id`s, unseen-player additive-only
-  behaviour across every surface, exact `--bootstrap` ensemble sizes, CLI exit
-  codes and output, additive-talent recovery, and recovery of a real
-  interaction signal beyond the additive baseline with a matched no-signal
-  control that shows no spurious improvement.
+- **`src/courtgraph/ingest/`** (7 modules) + `pbpstats==1.3.11` pinned in a new
+  `ingest` dependency group (included by `dev`, so CI installs it; lazily
+  imported so `courtgraph doctor` stays third-party-free):
+  - `snapshot.py` — the one documented layout `stats_nba_pbpstats/v1`: raw
+    `playbyplayv2` + `shotchartdetail` files consumed by `pbpstats` unchanged,
+    plus a `courtgraph_snapshot.json` carrying the non-play-by-play metadata
+    (date, teams, rest days, official period/final scores). Structural
+    validation, per-file SHA-256, and `stage_working_copy()` — `pbpstats`
+    parses a throwaway copy, never the snapshot.
+  - `policy.py` — `IngestPolicy` (`policy_version = "cg-ingest-policy/1"`):
+    every research choice named with a documented default — exact-final-score
+    reconciliation, the deterministic garbage-time rule, split-lineup handling,
+    the ambiguous-scoring bound.
+  - `possessions.py` — the sole `pbpstats` boundary. `reconstruct_game()`
+    returns plain typed `PossessionView`s. A hard `offline_guard()` turns any
+    socket connect / DNS attempt (e.g. `pbpstats`'s period-starter fallback)
+    into `IngestNetworkAttempt` -> the game is quarantined; the adapter never
+    makes a request.
+  - `validate.py` — CourtGraph's independent checks: five per side,
+    offense/defense in the game's two teams, possession alternation
+    re-derived, score reconciliation against the *independent* box-score total
+    (possession points + technical free throws), and per-possession exclusion
+    for empty / split-lineup / ambiguous-scoring possessions. Outcomes are
+    "accept", "exclude possession", or "quarantine game" — never a fabricated
+    value.
+  - `stints.py` — maximal runs of consecutive validated possessions with the
+    same ten on the floor become one-sided `Stint` rows. Non-contiguous
+    re-appearances of the same five are **never merged** (fresh run index ->
+    fresh `stint_id`).
+  - `manifest.py` / `pipeline.py` — `run_ingest()` writes `stints.jsonl`,
+    `quarantine.jsonl`, and a full `manifest.json` audit trail (input hashes,
+    `pbpstats` version, `policy_version`, run timestamp, per-game source-event
+    counts, reconciliation, every exclusion).
+- **CLI**: `courtgraph ingest --snapshot-dir PATH --out-dir DIR
+  [--allow-score-mismatch] [--json]`. Exit 0 when >=1 stint is emitted, 1 when
+  none, 2 on an invalid snapshot.
+- **`.gitignore`**: real snapshots, working copies, `stints.jsonl`,
+  `quarantine.jsonl`, `manifest.json` (`DATA_SOURCES.md` §1/§5.1). Fixtures
+  under `tests/` are committed.
+- **Tests** (`tests/test_nba_ingest.py`, `tests/test_nba_snapshot.py`,
+  `tests/_nba_fixtures.py`): a hand-authored builder emits **real
+  `playbyplayv2`-shaped JSON** that real `pbpstats` parses (asserted). Covers
+  ordinary play, offensive rebounds (same possession), free throws + a
+  technical, substitutions (new stint), overtime, non-contiguous same lineup
+  (not merged), split-lineup quarantine, score-reconciliation failure (+
+  `--allow-score-mismatch`), missing context, truncated/ambiguous pbp,
+  malformed snapshot JSON, missing files, snapshot immutability across runs,
+  proof that a happy-path ingest opens no socket, that a starters-incomplete
+  game is quarantined `network_required`, the audit manifest, and fixture
+  ingestion -> `courtgraph fit` -> `courtgraph predict`.
 
-### What the demo shows (default synthetic dataset, deterministic)
+## Honest limitations / not done
 
-17,424 stints, 120 players, 3 seasons. Macro held-out lineup-value RMSE
-(vs the known truth), additive → full:
-
-| holdout | additive | full | improvement |
-|---|---|---|---|
-| chronological | 3.32 | 3.32 | ~0% |
-| unseen_pair | ~2.4 | ~1.7 | ~29% |
-| unseen_lineup | 3.55 | 2.60 | ~27% |
-
-Talent recovery corr 0.88 (off) / 0.96 (def). Test-set corr(predicted C, true C)
-~0.28 (unseen_pair), ~0.29 (unseen_lineup), ~0 (chronological). The no-signal
-control shows ~0% improvement and a near-zero interaction pathway. (The
-structural unseen-pair split keeps each held player individually observed, so
-the additive baseline is already accurate there — the full model still improves
-on it.)
-
-## Honest limitations (does it jump ahead / skip anything?)
-
-- **Chronological holdout shows no chemistry benefit** at demo scale — reported
-  as-is. Chemistry is a small residual; the improvement lives in the group-level
-  and truth-referenced metrics, and the realized-outcome micro RMSE barely
-  moves. This matches `RESEARCH_CONTRACT.md` §14 but means the "headline" number
-  in the report is the truth-referenced macro one, only available because the
-  data is synthetic.
-- **Individual pair-surplus recovery is weak** (corr ~0.16 over supported
-  pairs); the model is reliable at the lineup-aggregate level, not per pair, at
-  this data size.
-- **Unseen-pair is not the contract's "strong" variant** — it is structural
-  (co-play removed) but both players stay individually observed and their
-  earlier partnerships elsewhere are not excluded. The strong/trade variant
-  is a later task.
-- **Uncertainty is explicitly approximate**: a block-bootstrap ensemble of the
-  interaction pathway with the additive fit and selected L2 held fixed. Not a
-  calibrated Bayesian posterior (contract §16 wants calibrated intervals — a
-  later rung).
-- **Model ladder**: only rungs 0/2 (additive) and ~5/6 (low-rank embeddings)
-  are built. Rungs 1, 3, 4, 7, calibration gates, and the T4 transaction
-  backtest are not — consistent with a *slice*, not the full cycle.
-- **Two-stage residual fit**, not a jointly identified hierarchical model; the
-  additive skip path can absorb some mean-field chemistry, so reported `C` is a
-  conservative surplus.
+- **No real snapshot was ingested** — none was provided and none was
+  downloaded (per instructions). Real-data validation is **pending**. To run
+  it, supply a `stats_nba_pbpstats/v1` snapshot directory: per game,
+  `pbp/stats_<game_id>.json` (`playbyplayv2`),
+  `game_details/stats_home_shots_<game_id>.json` and
+  `stats_away_shots_<game_id>.json` (`shotchartdetail`), optionally
+  `game_details/stats_boxscore_<game_id>.json`, optional `overrides/*.json`,
+  and `courtgraph_snapshot.json` with each game's `game_date`, `season`,
+  `season_type`, `home_team_id`, `away_team_id`, `days_rest` per team, and
+  `reconciliation.final_score` / `.period_scores`.
+- This is **not** the contract's independent-parser gate or the multi-game
+  reconciliation gate — `pbpstats` is the only reconstruction engine here and
+  CourtGraph's checks are within-lineage.
+- **Minute reconciliation** (master plan §7.7) is not implemented; only
+  final-score reconciliation gates a game. Period-score deltas are recorded
+  but informational.
+- Split-lineup possessions are **excluded**, not down-weighted (master plan
+  §7.4 leaves down-weighting for later).
+- The fixtures are shape-correct, not basketball-realistic: predicted values
+  from a model fit on them are meaningless (the demo proves plumbing only).
 
 ## Verification (final run before commit — all pass)
 
 ```
-uv lock --locked ; uv sync --locked                # Resolved / checked 9 packages
+uv lock --locked                                    # Resolved 15 packages (no drift)
+uv sync --locked
 uv run courtgraph doctor                            # CourtGraph 0.2.0: healthy
-uv run python -m unittest discover -s tests -v      # Ran 71 tests ... OK (~22s)
+uv run python -m unittest discover -s tests -v      # Ran 109 tests ... OK   (38 new)
 uv run python -m compileall -q src tests            # OK
 uv run ruff check .                                 # All checks passed!
-uv run ruff format --check .                        # 37 files already formatted
-uv run mypy                                         # Success: no issues in 23 source files
+uv run ruff format --check .                        # 48 files already formatted
+uv run mypy                                         # Success: no issues in 34 source files
 PYTHONPATH=src python3 -m courtgraph doctor         # healthy (dependency-free path)
-PYTHONPATH=src python3 -m unittest discover -s tests # Ran 71 tests ... OK
-uv run courtgraph demo --bootstrap 0 --out-dir <dir> --report <dir>/report.html
+PYTHONPATH=src python3 -m unittest discover -s tests # Ran 109 tests ... OK (23 skipped: no pbpstats)
 ```
 
-`demo --bootstrap 0`: 17,424 synthetic stints; macro RMSE additive→full
-chrono 3.32→3.32, unseen_pair 2.42→1.71 (29%), unseen_lineup 3.55→2.60 (27%);
-**0 leakage violations** on all three holdouts; self-contained HTML report
-written; saved artifact has **0 interaction-ensemble members and 0 ensemble
-references** (`config.n_bootstrap = 0`).
+- `courtgraph demo --bootstrap 0`: synthetic slice unchanged (unseen_pair
+  2.42->1.71, unseen_lineup 3.55->2.60, chrono 3.32->3.32); saved artifact has
+  0 interaction-ensemble members / 0 references; self-contained HTML report.
+- Fixture `courtgraph ingest` -> `fit` -> `predict`: 80 stints from 4
+  hand-authored games -> model fit -> decomposition `T + C + K = V`
+  (`222.93 - 0.40 + 29.77 = 252.31`). Fixtures are shape-correct, not
+  basketball-realistic, so these numbers only prove the plumbing.
 
-## Files changed (branch `task/chemistry-mvp`)
+## Files changed (branch `task/nba-stint-import`)
 
-- `src/courtgraph/chemistry/` — new package (8 modules + `__init__`).
-- `src/courtgraph/cli.py` — `demo` / `fit` / `predict` subcommands (lazy imports).
-- `src/courtgraph/__init__.py` — version 0.1.0 → 0.2.0.
-- `tests/test_chemistry_*.py`, `tests/_chemistry_support.py` — new.
-- `tests/test_health.py` — one assertion loosened for the version bump.
-- `pyproject.toml`, `uv.lock` — `numpy==2.3.5` runtime dependency.
-- `README.md`, `docs/PROJECT_STATUS.md`, `docs/CURRENT_TASK.md` — updated to
-  describe code that runs.
+- `src/courtgraph/ingest/` — new package (7 modules + `__init__`).
+- `src/courtgraph/cli.py` — `ingest` subcommand (lazy imports).
+- `pyproject.toml`, `uv.lock` — `ingest` group (`pbpstats==1.3.11`), mypy
+  override for the untyped `pbpstats`.
+- `.gitignore` — ingest inputs/outputs.
+- `tests/_nba_fixtures.py`, `tests/test_nba_ingest.py`,
+  `tests/test_nba_snapshot.py` — new.
+- `README.md`, `docs/PROJECT_STATUS.md`, `docs/CURRENT_TASK.md` — updated.
 
-No web server. No change to `DATA_SOURCES.md`, `RESEARCH_CONTRACT.md`,
-`docs/MASTER_PLAN.md`, `.github/`, `pilot/`.
+No change to `DATA_SOURCES.md`, `RESEARCH_CONTRACT.md`, `docs/MASTER_PLAN.md`,
+`.github/`, `pilot/`, or the synthetic chemistry code.
 
 ## Next action
 
-Codex approved the slice; `task/chemistry-mvp` is committed, pushed, and has an
-open PR to `main`. Merge the PR. The next single task (do not start until
-activated): swap the synthetic generator for a real NBA stint source per
-`DATA_SOURCES.md` §8, fed through the same stint format, and re-run the
-evaluation on real data.
+Codex approved the importer; `task/nba-stint-import` is committed, pushed, and
+has an open PR to `main`. Merge the PR. The next single task (do not start
+until activated): obtain a permitted real `stats_nba_pbpstats/v1` snapshot, run
+`courtgraph ingest`, and re-run the splits / models / evaluation on real data —
+including the reconciliation and independent-parser gates this fixture-only
+adapter does not cover.
