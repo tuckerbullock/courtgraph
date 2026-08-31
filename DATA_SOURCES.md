@@ -287,6 +287,14 @@ manufactured. "—" = not applicable to that source's role.
 - **Decision status:** **fallback (local dev only).**
 - **Reason:** lets the pilot proceed without repeatedly hitting live endpoints if the environment is blocked; carries the same NBA restrictions and cannot be released.
 - **Pilot check still required:** yes — checksum a pinned archive; confirm it matches a small live sample.
+- **Acquired so far (local, gitignored, pinned commit `e829d467…`):**
+  2024-25 **playoffs** (`_po_2024`, 84 games) on 2026-08-30; **regular seasons
+  2020-21 → 2024-25** (`nbastats`/`datanba`/`shotdetail` `_2020…_2024`,
+  5,998 games with all three surfaces) on 2026-08-31. Kept in separate
+  directories so `snapshot-from-shufinskiy --all-games` never pools regular
+  season with playoffs. 2025-26 regular-season play-by-play is not yet published
+  by this source (only `shotdetail`). sha256 of every `.tar.xz` is recorded in
+  each directory's `SOURCE.md`.
 
 ### SRC-NBADB-KAGGLE — `wyattowalsh/basketball` ("NBA Database") + `wyattowalsh/nbadb`
 
@@ -465,7 +473,7 @@ As of 2026-08-29 the last completed NBA season is **2025-26**.
 | Window | Recommended seasons | Rationale |
 |---|---|---|
 | **Development (3)** | **2023-24, 2024-25, 2025-26** | Most recent; fully covered by both NBA surfaces (`data.nba.com` since 2016-17); post-COVID scheduling; smallest re-ordering burden. |
-| **First research cycle (6, contiguous)** | **2020-21 → 2025-26** | Most recent contiguous six; entirely dual-surface, so the within-NBA possession-definition check (§5.2) runs for every game; only one structurally anomalous season (2020-21). |
+| **First research cycle (6, contiguous)** | **2020-21 → 2025-26** | Most recent contiguous six; entirely dual-surface, so the within-NBA possession-definition check (§5.2) runs for every game; only one structurally anomalous season (2020-21). **Acquired 2026-08-31 from SRC-SHUFINSKIY: the five available regular seasons 2020-21 → 2024-25 (5,158 / 5,998 games reconstructed → 266,518 stints); 2025-26 has no play-by-play from this source yet.** |
 | **Playoffs** | Ingest and **label** for all six seasons; **exclude from cycle-1 training by default**, reserving them for transport / robustness evaluation (contract §29 Q3). | Keeps regular season and playoffs from being silently pooled (master plan §6.3); leaves the playoff-transport test clean. |
 
 **Both windows are provisional** until the pilot confirms, per season: 100% of

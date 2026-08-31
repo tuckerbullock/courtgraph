@@ -4,103 +4,112 @@ Last updated: 2026-08-31
 
 ## State
 
-Done — **local browser app** on `task/local-lineup-app`, off `origin/main`
-(`ca63f38`). Implemented by Codex (user-authorized), then brought into the
-repository, re-verified, and finished by Claude Code; committed and pushed, PR
-open. No monitoring, data downloads, or public deployment occurred.
+Done — **five regular NBA seasons ingested** (2020-21 → 2024-25) on
+`task/regular-season-ingest`, off `origin/main` (`0a2e30d`). Committed and
+pushed, PR open. The importer was generalized to multi-season archives; the
+data was acquired locally (gitignored), converted, and run through
+`courtgraph ingest` in one pass. No live NBA endpoint was contacted.
 
-Claude finished one gap Codex left: the synthetic sandbox pool was too small
-for the cross-fitted interaction fit to clear its out-of-fold selection gate,
-so every "interaction surplus" was identically zero and the A/B comparison was
-meaningless. The sandbox now generates ~12.7k deterministic stints (fits in
-~7 s at startup) and recovers a non-zero interaction component, with a
-regression test.
+This is the first time CourtGraph has held real **regular-season** data — the
+window the modeling is designed around. The 2024-25 playoffs archive is
+untouched and stays held out for the transport test (`DATA_SOURCES.md` §6).
 
 ## Delivered
 
-- `courtgraph app`: local browser app, bound only to `127.0.0.1` (default 8765).
-- Game explorer reads an explicitly supplied ingest output and optional names
-  sidecar. It verifies the stint checksum and accepted-game exposure/date
-  consistency. Game, offensive-team, player, and minimum-possession filters;
-  observed offensive lineup rates; source, score-check, and exclusion panels.
-- Whole-archive conversion via `snapshot-from-shufinskiy --all-games`, with
-  coverage recorded in provenance. The local 2025 playoff archive has 84 games:
-  83 complete inputs and attempted, 62 accepted, 21 quarantined, and one missing
-  a required input. The UI exposes every game and exact failure category rather
-  than presenting the old three-game batch as the available dataset.
-- Synthetic sandbox fits a deterministic model (~12.7k stints) in memory at
-  startup (~7 s). Two independently chosen fives share an opposing five and
-  context; compare talent, interaction, context, offensive value, individual
-  training support, and approximate interaction intervals. No real observations
-  enter this model.
-- Fixed asset routes, origin/host checks, bounded JSON requests, and no file
-  browsing, upload, telemetry, external assets, or new dependencies.
+### Importer generalization (`src/courtgraph/ingest/shufinskiy.py`)
 
-## Run
+- Was hardcoded to `nbastats_po_2024.csv` / `datanba_po_2024.csv` /
+  `shotdetail_po_2024.csv`. Now globs `nbastats*.csv` / `datanba*.csv` /
+  `shotdetail*.csv` in the archive dir and concatenates every match, so one
+  archive holds several seasons. A provider contributing zero files is a clear
+  `ShufinskiyArchiveError`.
+- `provenance.json` hashes every consumed CSV; `archive_coverage` keys switch
+  from filenames to provider labels (`nbastats` / `datanba` / `shotdetail`).
+  `CONVERTER_VERSION` → `cg-shufinskiy/3`.
+- **Rest days are counted only against a team's earlier game in the same
+  season.** Pooling seasons previously made every season opener look like a game
+  with ~150 days' rest carried over from the prior postseason; such a game now
+  has `days_rest` omitted and is quarantined (`missing_context`).
+- CLI help + `snapshot-from-shufinskiy` human output generalized (no per-game
+  line spam past 50 games).
+- Tests: `ShufinskiyMultiSeasonTests` (glob discovery + hashing, same-season
+  rest bound, cross-season leak guard, missing-provider error). Fixture gains
+  `write_multi_season_archive` and a `suffix` arg on `write_raw_archive`.
 
-```bash
-uv run courtgraph app
+### Data acquisition (local, gitignored — nothing under `data/` is committed)
+
+- `data/nba_snapshots/_shufinskiy_rs_2020_2024/` — 15 `*.tar.xz`
+  (`{nbastats,datanba,shotdetail}_{2020..2024}`, ~102 MB) from
+  `shufinskiy/nba_data` @ pinned commit
+  `e829d4678be1e075f99e5d41a1c5f97089be446b`, sha256-recorded in `SOURCE.md`
+  and `_archives/SHA256SUMS.txt`, extracted to ~1.3 GB of CSV (~6.7 M rows).
+- Kept in a **separate directory** from the playoffs archive so
+  `--all-games` never pools regular season with playoffs.
+
+## The run (local only, not committed)
+
+```
+snapshot-from-shufinskiy --all-games  → 6,000 archive games, 5,998 complete
+                                         (2 missing the datanba feed)
+ingest                                → 5,158 accepted · 840 quarantined
+                                         266,518 stints · 941,897 accepted
+                                         possessions · 91,420 excluded
 ```
 
-Then open `http://127.0.0.1:8765`. Stop with Ctrl+C. To use the complete local
-playoff archive (the `_shufinskiy_src` archive is gitignored local-dev data,
-not in the repo):
-
-```bash
-uv run courtgraph snapshot-from-shufinskiy \
-  --archive-dir data/nba_snapshots/_shufinskiy_src --all-games \
-  --out-dir data/nba_snapshots/all_2025_playoffs/snap
-uv run courtgraph ingest \
-  --snapshot-dir data/nba_snapshots/all_2025_playoffs/snap \
-  --out-dir data/nba_snapshots/all_2025_playoffs/out
-uv run courtgraph app \
-  --ingest-dir data/nba_snapshots/all_2025_playoffs/out \
-  --names data/nba_snapshots/all_2025_playoffs/snap/display_names.json
-```
-
-The generated local dataset has 3,325 stints, 10,852 accepted possessions, 1,236
-recorded exclusions, 16 teams, and 210 players. It remains gitignored and the
-three source CSV hashes are unchanged. Provenance records converter
-`cg-shufinskiy/2` and the pinned source commit.
+- **Coverage: 5,158 / 5,998 games (86%).** 30 teams, 985 players,
+  2020-12-25 → 2025-04-13.
+- Per season (accepted / total): 2020-21 929/1080 · 2021-22 1039/1230 ·
+  2022-23 1069/1230 · 2023-24 1088/1228 · 2024-25 1033/1230.
+- Quarantine reasons: **503 `network_required`** (pbpstats wants a
+  stats.nba.com box-score call for period starters; the offline guard blocks
+  it — the dominant loss and the main lever for a follow-up), 170
+  `TeamHasBackToBackPossessionsException` (pbpstats internal), 93
+  `score_reconciliation_failed` (reconstructed final ≠ feed final), 68
+  `missing_context` (season openers, no same-season prior game), 5
+  `possession_alternation_failed`, 1 `AttributeError`.
+- Reconciliation on accepted games: reconstructed final and every period match
+  the data.nba.com feed exactly (`final_score_matched: true`). This is a
+  within-NBA check (stats vs feed), **not** an independent provider.
 
 ## Verification
 
-Re-run by Claude Code on the committed branch (`uv` environment, Python 3.13):
+- `uv sync --locked`, `uv run courtgraph doctor` — clean / healthy.
+- `uv run python -m unittest discover -s tests -v` — **158 tests** (3 new);
+  `compileall`, `ruff check`, `ruff format --check`, `mypy` (45 files) clean;
+  `PYTHONPATH=src python3 -m unittest …` — 158 OK (33 skipped, no numpy).
+- Real end-to-end run of `snapshot-from-shufinskiy --all-games` → `ingest`
+  → counts above; `courtgraph app --ingest-dir …` `/api/state` reports 6,000
+  games, 30 teams, 985 players, matching coverage, real names.
+- Spot-checked games across all five seasons: `final_score_matched: true`,
+  per-period deltas zero. `days_rest_offense` distribution is sane (mode 1,
+  back-to-backs 0, All-Star-break gaps 7-8; **no cross-season >100-day
+  values**).
+- `git status` clean of everything under `data/` (all gitignored).
 
-- `uv sync --locked` — 15 packages, no drift.
-- `uv run courtgraph doctor` — healthy.
-- `uv run python -m unittest discover -s tests -v` — **155 tests passed**
-  (1 new regression test for the sandbox interaction signal).
-- `uv run python -m compileall -q src tests` — OK.
-- `uv run ruff check .` / `ruff format --check .` — clean.
-- `uv run mypy` — clean, 45 source files.
-- `node --check src/courtgraph/app/static/app.js` — passed.
-- `PYTHONPATH=src python3 -m unittest discover -s tests` — 155 OK (33 skipped:
-  no `numpy` on that interpreter).
-- **Full-archive pipeline, end to end on the local archive:**
-  `snapshot-from-shufinskiy --all-games` → coverage `archive_games=84`,
-  `complete_games=83`, one game missing `datanba_po_2024.csv`; `ingest` →
-  62 accepted, 21 quarantined, 3,325 stints, 10,852 accepted possessions,
-  1,236 excluded; `courtgraph app --ingest-dir …` → `/api/state` reports 84
-  games, 16 teams, 210 players, matching coverage counts, real player names
-  resolved.
-- `courtgraph app` (sandbox only): `/api/state` and `/api/compare` return the
-  synthetic catalog and decomposition; `Host: evil.com` → 403.
-- Codex's Browser tool was blocked by its admin policy; the coverage screen's
-  underlying data is verified above, a manual look at the rendered UI is still
-  worthwhile but no longer a blocker.
+## Boundaries
 
-## Boundaries and next action
+- Observational regular-season data only — no model is fit or evaluated here.
+- The score check is within-NBA (stats reconstruction vs data.nba.com feed),
+  not an independent lineage (`DATA_SOURCES.md` §5.2).
+- Box-score minutes / lineup minutes are not reconciled.
+- 14% of games are quarantined; the biggest bucket (`network_required`, 503
+  games) needs operator-supplied period starters or a permitted box-score
+  fetch, both out of scope here.
+- 2020-21 is the COVID-shortened 72-game season and is structurally unusual
+  (`DATA_SOURCES.md` §6).
 
-This is one postseason observational archive plus a fictional sandbox. It is
-not a validated NBA model, complete dated-roster optimizer, injury forecast,
-or betting product. Raw observed rates exclude quarantined/split possessions
-and do not apply garbage-time weights. Training support in the sandbox is
-individual exposure, not evidence that the exact selected five has a large
-sample. Bootstrap intervals concern interaction only, not total performance.
+## Next candidate tasks (not started)
 
-Next candidate task (not started): improve the importer for the 21 quarantined
-playoff games. The next scientific milestone remains permitted multi-season NBA
-data validation and chronological baseline evaluation. The research contract and
-the parked `task/schema-contract` worktree are unchanged. `MASTER_PLAN.md`
-section 44 (appended future capabilities) is already on `main` (PR #9).
+1. **Run the model on real data** — leakage-safe splits (chronological,
+   unseen-pair, unseen-lineup) + the ridge RAPM baseline + the low-rank model
+   on these 266k stints; compare to the contract's rung-2/3 references. This is
+   the next scientific milestone.
+2. Nullable `days_rest_offense` (stint schema v3) to recover the 68
+   season-opener quarantines.
+3. Recover `network_required` games (503) with operator period-starter files.
+4. 2016-17 → 2019-20 seasons — gated by the contract on passing data-quality
+   checks first.
+
+The research contract and the parked `task/schema-contract` worktree are
+unchanged. `MASTER_PLAN.md` §44 is on `main` (PR #9); `courtgraph app` is on
+`main` (PR #10).

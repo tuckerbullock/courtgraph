@@ -109,17 +109,23 @@ copies, derived stint rows, and manifests are gitignored (`DATA_SOURCES.md`
 §1/§5.1); only hand-authored fixtures under `tests/` are committed.
 
 `--report PATH` also writes one self-contained HTML report (teams, lineups,
-score check, exclusions). For a local demonstration on real playoff games,
-`courtgraph snapshot-from-shufinskiy --archive-dir DIR --all-games --out-dir
-DIR` builds every game that has the three required inputs in a local
-`SRC-SHUFINSKIY` archive. Use repeatable `--game GID` instead for a selected
-batch. This is the `DATA_SOURCES.md` §1 local-dev-only fallback; no network is
-used. The converter records the consumed
-CSV hashes and pinned source commit in `provenance.json`, and gitignores its
-whole output. Its score check uses an operator `official_totals.json` when
-present, otherwise the data.nba.com game feed (labelled per game) — a second
-NBA surface, not an independent provider. One postseason is not evidence of
-predictive accuracy.
+score check, exclusions). `courtgraph snapshot-from-shufinskiy --archive-dir DIR
+--all-games --out-dir DIR` builds every game that has all three required
+provider inputs in a local `SRC-SHUFINSKIY` archive; the archive may hold a
+single postseason (`nbastats_po_2024.csv` …) or several regular seasons
+(`nbastats_2020.csv` … `nbastats_2024.csv` — every `nbastats*.csv` /
+`datanba*.csv` / `shotdetail*.csv` is read). Use repeatable `--game GID` for a
+selected batch. This is the `DATA_SOURCES.md` §1 local-dev-only fallback; no
+network is used. The converter records every consumed CSV's hash and the pinned
+source commit in `provenance.json`, counts rest days only against a team's
+earlier same-season game, and gitignores its whole output. Its score check uses
+an operator `official_totals.json` when present, otherwise the data.nba.com game
+feed (labelled per game) — a second NBA surface, not an independent provider.
+
+The five regular seasons 2020-21 → 2024-25 have been ingested locally this way
+(5,158 / 5,998 games → 266,518 stints); the data stays gitignored. No model has
+been fit on it yet, and a within-NBA score check is not evidence of predictive
+accuracy.
 
 ## Local browser app (`courtgraph app`)
 
@@ -144,24 +150,27 @@ uv run courtgraph app --ingest-dir path/to/ingest_out \
     --names path/to/snapshot/display_names.json
 ```
 
-The current local 2025 playoff archive can be rebuilt and opened with:
+A local archive can be rebuilt and opened with (here, the five-season
+regular-season archive):
 
 ```bash
 uv run courtgraph snapshot-from-shufinskiy \
-    --archive-dir data/nba_snapshots/_shufinskiy_src --all-games \
-    --out-dir data/nba_snapshots/all_2025_playoffs/snap
+    --archive-dir data/nba_snapshots/_shufinskiy_rs_2020_2024 --all-games \
+    --out-dir data/nba_snapshots/rs_2020_2024/snap
 uv run courtgraph ingest \
-    --snapshot-dir data/nba_snapshots/all_2025_playoffs/snap \
-    --out-dir data/nba_snapshots/all_2025_playoffs/out
+    --snapshot-dir data/nba_snapshots/rs_2020_2024/snap \
+    --out-dir data/nba_snapshots/rs_2020_2024/out
 uv run courtgraph app \
-    --ingest-dir data/nba_snapshots/all_2025_playoffs/out \
-    --names data/nba_snapshots/all_2025_playoffs/snap/display_names.json
+    --ingest-dir data/nba_snapshots/rs_2020_2024/out \
+    --names data/nba_snapshots/rs_2020_2024/snap/display_names.json
 ```
 
-That local archive has 84 games: 83 have all three required source inputs, 62
-currently pass reconstruction, 21 are quarantined with recorded reasons, and
-one lacks a required source feed. The explorer shows all 84 in its coverage and
-game controls rather than silently hiding failed or incomplete games.
+That archive holds 6,000 regular-season games (2020-21 → 2024-25); 5,998 have
+all three provider inputs, 5,158 pass reconstruction (266,518 stints), 840 are
+quarantined with recorded reasons, and two lack the data.nba.com feed. The
+explorer shows every game in its coverage and game controls rather than silently
+hiding failed or incomplete games. (The 2024-25 playoffs archive
+`_shufinskiy_src` still works the same way and is kept separate.)
 
 `--names` is optional. The explorer checks the stint checksum and game exposure
 against the manifest before loading. Filter by game, offensive team, player,
@@ -229,13 +238,14 @@ The project will treat chemistry as a model-dependent predictive quantity, not a
 
 ## Next milestone
 
-The local browser app now connects the 2025 playoff observational explorer and
-the separate synthetic lineup sandbox. The next scientific milestone remains
-full-season, multi-season permitted data validation and a chronological
-real-NBA baseline comparison. The local explorer does not establish real-NBA
-predictive accuracy;
-independent-parser, minute reconciliation, and the full evidence gates remain
-pending. Additional product ideas remain in the backlog, not active work.
+Five regular NBA seasons (2020-21 → 2024-25) have been ingested into 266,518
+real stints. The next scientific milestone is to run the leakage-safe splits,
+the additive ridge RAPM baseline, and the low-rank chemistry model on that data
+and compare held-out prediction to the contract's rung-2/3 references. Nothing
+about the observational data or the within-NBA score check establishes
+predictive accuracy; the independent-parser gate, minute reconciliation, and the
+full evidence bar remain pending. Additional product ideas remain in the
+backlog, not active work.
 
 ## License
 
