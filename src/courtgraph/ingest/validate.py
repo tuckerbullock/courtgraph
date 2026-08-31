@@ -264,6 +264,10 @@ def _reconcile_scores(
             str(p): {str(t): d for t, d in deltas.items()}
             for p, deltas in period_deltas.items()
         },
+        "official_score_source": (
+            metadata.reconciliation_source
+            or "unspecified (snapshot carried no reconciliation.source)"
+        ),
     }
 
     if not matched and policy.require_exact_final_score:

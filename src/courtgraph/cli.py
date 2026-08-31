@@ -328,11 +328,16 @@ def _cmd_ingest(args: argparse.Namespace, stream: TextIO) -> int:
 
     report_path = None
     if args.report is not None:
+        from courtgraph.ingest._paths import OutputPathError
         from courtgraph.ingest.report import write_report
 
-        report_path = write_report(
-            result.out_dir, args.report, snapshot_dir=args.snapshot_dir
-        )
+        try:
+            report_path = write_report(
+                result.out_dir, args.report, snapshot_dir=args.snapshot_dir
+            )
+        except OutputPathError as exc:
+            print(f"ingest: unsafe --report path: {exc}", file=stream)
+            return 2
 
     if args.json:
         print(
@@ -369,16 +374,18 @@ def _cmd_ingest(args: argparse.Namespace, stream: TextIO) -> int:
 
 
 def _cmd_snapshot_from_shufinskiy(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.ingest._paths import OutputPathError
     from courtgraph.ingest.shufinskiy import ShufinskiyArchiveError, build_snapshot
 
     try:
         snap = build_snapshot(args.archive_dir, list(args.game), args.out_dir)
-    except (ShufinskiyArchiveError, FileNotFoundError) as exc:
+    except (ShufinskiyArchiveError, OutputPathError, FileNotFoundError) as exc:
         print(f"snapshot-from-shufinskiy: {exc}", file=stream)
         return 2
 
     payload = {
         "out_dir": str(snap.out_dir),
+        "provenance": snap.provenance,
         "game_ids": list(snap.game_ids),
         "quarantine_expected": snap.quarantine_expected,
     }

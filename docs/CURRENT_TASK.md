@@ -18,58 +18,72 @@ worktree is untouched.
 
 The importer now runs on **real NBA play-by-play**, with a readable report.
 
-- **`src/courtgraph/ingest/shufinskiy.py`** — `build_snapshot()` converts named
-  games from a local **SRC-SHUFINSKIY** playoffs archive (CSV re-packaging of
-  stats.nba.com / data.nba.com; `DATA_SOURCES.md` §1 — the local-dev-only
-  fallback) into a `stats_nba_pbpstats/v1` snapshot: `playbyplayv2` and
-  `shotchartdetail` rebuilt from the CSVs; `game_date` / teams derived; the
-  **`reconciliation` target taken from the data.nba.com lineage** (a second NBA
-  surface, not an independent provider); rest days computed from the archive's
-  own game dates. A game whose rest days cannot be derived is written **without**
-  `days_rest` (importer quarantines it — nothing fabricated). A
-  `display_names.json` sidecar (ids -> names, display only) is written for the
-  report. No network.
-- **`src/courtgraph/ingest/report.py`** — `render_report()` / `write_report()`:
-  one self-contained HTML report from a completed ingest — run totals, per-game
-  matchup with real team/player names, the score check vs the data.nba.com
-  lineage (per team and per period), busiest stint lineups, garbage-time-weighted
-  stints, and every exclusion. Banner states plainly that a few games is not
-  evidence of predictive accuracy.
-- **CLI**: `courtgraph snapshot-from-shufinskiy --archive-dir DIR --game GID ...
-  --out-dir DIR`; `courtgraph ingest ... --report PATH`.
-- **Tests** (+9): converter (structure, padded ids, derived-not-fabricated
-  metadata, no-prior-game -> no `days_rest`, name sidecar, unknown-game error)
-  and the report renderer (self-contained, shows teams/lineups/score check/
-  exclusions, honest disclaimer).
+- **`src/courtgraph/ingest/shufinskiy.py`** (`build_snapshot()`) converts named
+  games from a local **SRC-SHUFINSKIY** playoffs archive (`DATA_SOURCES.md` §1
+  local-dev-only fallback) into a `stats_nba_pbpstats/v1` snapshot:
+  - `playbyplayv2` rows emitted **in the archive's order** (`EVENTNUM` is not
+    sorted — it is not always monotonic and pbpstats fixes ordering itself);
+  - game date and rest days from the **validated `GAME_DATE`** in `shotdetail`
+    (never the UTC event wall-clock, which can roll past midnight);
+  - reconciliation target = an operator `official_totals.json` when present,
+    otherwise the data.nba.com game feed's own running score, labelled per game
+    in `reconciliation.source`;
+  - a game whose date / rest / totals can't be determined is written without
+    them → importer quarantines it (nothing fabricated);
+  - `provenance.json` (consumed-CSV sha256s, pinned `shufinskiy` commit,
+    `converter_version`); `display_names.json` (ids → names, report only);
+    a `.gitignore` (`*`). Destination is checked for overlap with the archive
+    and for symlinked generated files before any write. No network.
+- **`src/courtgraph/ingest/report.py`** — one self-contained HTML report: run
+  totals, source-provenance table, per-game matchup with real names, the score
+  check **against the recorded source stated per game**, busiest stint lineups,
+  garbage-time-weighted stints, and every exclusion. `write_report` refuses a
+  symlinked path or one inside the snapshot / on an ingest output file.
+- **Manifest** now carries `source_provenance` and, per game,
+  `reconciliation.official_score_source`.
+- **CLI**: `courtgraph snapshot-from-shufinskiy`; `courtgraph ingest --report`.
+- **Tests (+17)**: CSV order preserved with non-monotonic `EVENTNUM`; `GAME_DATE`
+  used across a UTC-midnight crossing (date + rest); provenance recorded;
+  `official_totals.json` preferred; destination overlap / symlink rejected;
+  snapshot `.gitignore`; report provenance + recorded score source + unsafe
+  path rejection.
 
 ## The demonstration (local only, not committed)
 
-Round 1, Cavaliers-Heat, from the local archive:
+2024-25 Round 1, Cavaliers–Heat, from the local archive, strict checks:
 
-| game | date | result | outcome |
+| game | date | recorded final | outcome |
 |---|---|---|---|
-| `0042400102` | 2025-04-23 | -- | quarantined: `pbpstats` cannot order two events (needs an override) |
-| `0042400103` | 2025-04-26 | -- | quarantined: period starters not inferable from PBP -> a box-score request -> refused by the offline guard |
-| `0042400104` | 2025-04-28 | CLE 138 - MIA 83 | **accepted**: 197 possessions reconstructed, 184 accepted, **47 stints**; reconstructed score == data.nba.com lineage exactly, all four periods; 2 empty + 11 split-lineup possessions excluded; 2 stints garbage-time-weighted (0.2) |
+| `0042400102` (Game 2) | 2025-04-23 | CLE 121 – MIA 112 (data.nba.com feed) | **accepted** — 189 possessions reconstructed, 175 accepted, **50 stints**; reconstructed score matches the feed exactly, all periods; 3 empty + 11 split-lineup possessions excluded |
+| `0042400103` (Game 3) | 2025-04-26 | CLE 124 – MIA 87 (feed) | **accepted** — 183 reconstructed, 165 accepted, **47 stints**; score matches; 3 empty + 15 split-lineup excluded |
+| `0042400104` (Game 4) | 2025-04-28 | — | **quarantined** — `network_required`: pbpstats cannot infer all five period starters for this game from PBP alone and its only fallback is a stats.nba.com box-score request, refused by the offline guard. (Preserved as-is; recovering it is out of scope.) |
 
-Real lineups appear by name (e.g. *Donovan Mitchell, Evan Mobley, Jarrett Allen,
-Max Strus, Sam Merrill*). This is one game -- **not** proof of predictive
-accuracy, calibration, or data quality at scale.
+Real lineups appear by name (e.g. *Darius Garland, Donovan Mitchell, Evan Mobley,
+Jarrett Allen, Max Strus*). Fixing the `EVENTNUM` sort (finding 1) is what let
+Games 2 and 3 through — the previous run's "Game 4 accepted" was an artifact of
+that bug. Two accepted games is still **not** proof of predictive accuracy,
+calibration, or data quality.
+
+**Official Game 2 totals:** the four-findings note asked to use "the previously
+supplied official Game 2 totals". None were present in this task's input, so the
+demo uses the data.nba.com feed (source labelled per game) and the
+`official_totals.json` mechanism is ready for when they are supplied. Flagged in
+the milestone reply.
 
 ## Data permission
 
-The archive is `SRC-SHUFINSKIY` -- acquired 2026-08-30 for
-`task/schema-contract`, pinned + checksummed, **no live endpoint contacted**.
-`DATA_SOURCES.md` classifies it *fallback -- local dev only*: fine for a local,
-non-redistributed demonstration; NBA terms still apply. All NBA data, the built
-snapshot, the ingest outputs, and the report are gitignored
-(`data/nba_snapshots/`). No data was downloaded for this task. A truly
-independent reconciliation lineage is still unavailable (`DATA_SOURCES.md` §5.2).
+`SRC-SHUFINSKIY` — acquired 2026-08-30 for `task/schema-contract`, pinned +
+checksummed, **no live endpoint contacted**. `DATA_SOURCES.md` classifies it
+*fallback — local dev only*: fine for a local, non-redistributed demonstration;
+NBA terms still apply. All NBA data, snapshots, ingest outputs, and reports are
+gitignored (`data/nba_snapshots/`). No data was downloaded. A truly independent
+reconciliation lineage is still unavailable (`DATA_SOURCES.md` §5.2).
 
 ## Limitations
 
 - One archive, one series; nothing validated at season scale.
-- Reconciliation is within-NBA (stats vs data.nba.com), not independent.
+- Unless official totals are supplied, the score check is within-NBA (stats vs
+  data.nba.com feed), not independent.
 - Box-score minutes / lineup minutes are not reconciled.
 - Games needing `pbpstats` overrides are quarantined, not patched.
 - No model is fit or evaluated.
@@ -79,17 +93,17 @@ independent reconciliation lineage is still unavailable (`DATA_SOURCES.md` §5.2
 ```
 uv lock --locked                                    # 15 packages, no drift
 uv run courtgraph doctor                             # healthy
-uv run python -m unittest discover -s tests -v       # 118 tests OK (9 new)
+uv run python -m unittest discover -s tests -v       # 126 tests OK (17 new this milestone)
 uv run python -m compileall -q src tests             # OK
 uv run ruff check . ; uv run ruff format --check .   # clean
-uv run mypy                                          # 39 source files, clean
-PYTHONPATH=src python3 -m courtgraph doctor / unittest  # 118 OK (26 skipped: no pbpstats)
+uv run mypy                                          # 40 source files, clean
+PYTHONPATH=src python3 -m courtgraph doctor / unittest  # 126 OK (28 skipped: no pbpstats)
 uv run courtgraph demo --bootstrap 0                 # synthetic slice unchanged; 0 ensemble members
 courtgraph snapshot-from-shufinskiy ... ; courtgraph ingest ... --report report.html
 ```
 
 ## Next action
 
-Codex review before merge. Next single task (do not start until activated):
-recover the two quarantined games with `pbpstats` override files derived from a
-box score, and/or extend the run to a full series.
+Codex review before merge. If the user supplies `official_totals.json`, re-run
+the batch so the score check uses the NBA box score. Recovering Game 4 (a
+`pbpstats` period-starter override from a box score) is a later task.

@@ -66,6 +66,7 @@ class AuditManifest:
     parser: dict[str, Any] = field(default_factory=dict)
     policy: dict[str, Any] = field(default_factory=dict)
     corrections: dict[str, Any] = field(default_factory=dict)
+    source_provenance: dict[str, Any] = field(default_factory=dict)
     games: list[GameManifest] = field(default_factory=list)
     outputs: dict[str, Any] = field(default_factory=dict)
 
@@ -94,6 +95,7 @@ class AuditManifest:
             "parser": self.parser,
             "policy": self.policy,
             "corrections": self.corrections,
+            "source_provenance": self.source_provenance,
             "totals": self.totals,
             "games": [g.to_dict() for g in self.games],
             "outputs": self.outputs,

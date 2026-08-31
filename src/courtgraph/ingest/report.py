@@ -17,6 +17,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from courtgraph.ingest._paths import (
+    OutputPathError,
+    assert_not_symlink,
+    reject_overlap,
+    writable,
+)
+
 _CSS = "\n".join(
     (
         "body{font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;",
@@ -100,12 +107,28 @@ def render_report(
         "<div class='banner'><b>Real NBA play-by-play, small demonstration.</b> "
         "Source: a local <code>SRC-SHUFINSKIY</code> archive (a re-packaging of "
         "stats.nba.com / data.nba.com; <code>DATA_SOURCES.md</code> §1 — "
-        "local-dev-only, not redistributable). The score check compares the "
-        "reconstructed stats.nba.com possessions against the "
-        "<b>data.nba.com lineage</b> — a second NBA surface, <i>not</i> an "
-        "independent provider. A handful of games is <b>not</b> evidence of "
+        "local-dev-only, not redistributable). The score-check source is stated "
+        "per game below (an operator-supplied official box score when provided, "
+        "otherwise the data.nba.com game feed — a second NBA surface, not an "
+        "independent provider). A handful of games is <b>not</b> evidence of "
         "predictive accuracy, calibration, or data quality at scale.</div>",
     ]
+
+    provenance = manifest.get("source_provenance") or {}
+    if provenance:
+        rows = [
+            ["converter version", provenance.get("converter_version", "?")],
+            [
+                "pinned shufinskiy commit",
+                provenance.get("pinned_commit") or "(not recorded)",
+            ],
+        ]
+        for name, digest in sorted(
+            (provenance.get("consumed_csv_sha256") or {}).items()
+        ):
+            rows.append([f"sha256 {name}", digest])
+        parts.append("<h2>Source provenance</h2>")
+        parts.append(_table(["item", "value"], rows))
 
     totals = manifest["totals"]
     parts.append("<h2>Run totals</h2>")
@@ -132,10 +155,11 @@ def render_report(
     parts.append(
         "<ul>"
         "<li>One archive, one series — nothing here is validated at season scale.</li>"
-        "<li>Reconciliation is <b>within-NBA</b> (stats.nba.com possessions vs "
-        "data.nba.com totals); a truly independent lineage is still unavailable "
+        "<li>Unless an operator supplies official box-score totals, the score "
+        "check is <b>within-NBA</b> (stats.nba.com possessions vs the "
+        "data.nba.com feed); a truly independent lineage is still unavailable "
         "(<code>DATA_SOURCES.md</code> §5.2).</li>"
-        "<li>Rest days are derived from the archive's own game dates; box-score "
+        "<li>Rest days use the validated <code>GAME_DATE</code>; box-score "
         "minutes and lineup minutes are not reconciled.</li>"
         "<li>Games <code>pbpstats</code> cannot order, or whose period starters "
         "need a box-score request, are quarantined here rather than patched — "
@@ -192,6 +216,7 @@ def _render_game(
         if matched
         else "<span class='warn'>does not match</span>"
     )
+    score_source = recon.get("official_score_source", "unspecified")
     rows = []
     for team in sorted(official, key=lambda k: -official[k]):
         rows.append(
@@ -202,12 +227,11 @@ def _render_game(
                 int(derived.get(team, 0)) - int(official.get(team, 0)),
             ]
         )
-    out.append(
-        f"<h3>Score check — reconstructed vs data.nba.com lineage: {verdict}</h3>"
-    )
+    out.append(f"<h3>Score check — reconstructed vs recorded total: {verdict}</h3>")
+    out.append(f"<p class='muted'>Score-check source: {_esc(score_source)}</p>")
     out.append(
         _table(
-            ["team", "data.nba.com", "reconstructed", "delta"],
+            ["team", "recorded total", "reconstructed", "delta"],
             rows,
             numeric={1, 2, 3},
         )
@@ -314,8 +338,22 @@ def write_report(
     snapshot_dir: str | Path | None = None,
 ) -> Path:
     path = Path(report_path)
+    # The report is derived output: never write it through a symlink, never
+    # inside the immutable snapshot, and never on top of an ingest output file.
+    assert_not_symlink(path)
+    if snapshot_dir is not None:
+        reject_overlap(
+            Path(snapshot_dir), path, in_label="--snapshot-dir", out_label="--report"
+        )
+    resolved = path.resolve()
+    protected_outputs = {
+        (Path(ingest_out_dir) / name).resolve()
+        for name in ("manifest.json", "stints.jsonl", "quarantine.jsonl", ".gitignore")
+    }
+    if resolved in protected_outputs:
+        raise OutputPathError(f"--report would overwrite an ingest output: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    writable(path).write_text(
         render_report(ingest_out_dir, snapshot_dir=snapshot_dir), encoding="utf-8"
     )
     return path

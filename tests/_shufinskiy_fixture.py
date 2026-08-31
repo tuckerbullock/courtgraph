@@ -8,6 +8,7 @@ toy playoff games, reusing the ``playbyplayv2`` row builder from
 from __future__ import annotations
 
 import csv
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -73,21 +74,24 @@ def _pbp_rows(builder: GameBuilder, game_id: str) -> list[dict[str, str]]:
 
 
 def _datanba_rows(
-    builder: GameBuilder, game_id: str, date_iso: str
+    builder: GameBuilder, game_id: str, date_iso: str, wallclk_date: str | None = None
 ) -> list[dict[str, str]]:
     """A compatible data.nba.com track: same running score, home = HOME_TEAM
     (its scoring drives the ``hs`` column, which is how the converter tells the
-    two teams apart)."""
+    two teams apart). ``wallclk_date`` (defaulting to ``date_iso``) is the UTC
+    calendar date of the event timestamps -- distinct from the game's local
+    date when a tip-off rolls past UTC midnight."""
 
     final = builder.final_score()
     periods = builder.period_scores()
     short = game_id[2:] if game_id.startswith("00") else game_id
+    wallclk_date = wallclk_date or date_iso
 
     def row(
         clock: str, hs: int, vs: int, tid: int, etype: str, period: int
     ) -> dict[str, str]:
         return {
-            "wallclk": f"{date_iso}T{clock}Z",
+            "wallclk": f"{wallclk_date}T{clock}Z",
             "hs": str(hs),
             "vs": str(vs),
             "tid": str(tid),
@@ -110,43 +114,72 @@ def _datanba_rows(
     return rows
 
 
+def _shot_rows(game_id: str, date_iso: str) -> list[dict[str, str]]:
+    short = game_id[2:] if game_id.startswith("00") else game_id
+    base = {
+        "GRID_TYPE": "Shot Chart Detail",
+        "GAME_ID": short,
+        "PLAYER_NAME": "A Player",
+        "PERIOD": "1",
+        "LOC_X": "10",
+        "LOC_Y": "20",
+        "GAME_DATE": date_iso.replace("-", ""),
+        "HTM": "RIV",
+        "VTM": "HIL",
+    }
+    return [
+        {**base, "GAME_EVENT_ID": "8", "PLAYER_ID": "101", "TEAM_ID": str(HOME_TEAM)},
+        {**base, "GAME_EVENT_ID": "9", "PLAYER_ID": "201", "TEAM_ID": str(AWAY_TEAM)},
+    ]
+
+
 def write_archive(
     directory: str | Path,
-    games: list[tuple[str, str, GameBuilder]],
+    games: list[tuple[Any, ...]],
 ) -> Path:
-    """``games`` = list of (game_id, date_iso, builder)."""
+    """``games`` = list of (game_id, game_date_iso, builder[, wallclk_date_iso])."""
 
     root = Path(directory)
     root.mkdir(parents=True, exist_ok=True)
+    (root / "SOURCE.md").write_text(
+        "# fixture\nPinned commit: `0123456789abcdef0123456789abcdef01234567`\n"
+    )
     nbastats: list[dict[str, str]] = []
     datanba: list[dict[str, str]] = []
     shots: list[dict[str, str]] = []
-    for game_id, date_iso, builder in games:
+    for entry in games:
+        game_id, date_iso, builder = entry[0], entry[1], entry[2]
+        wallclk_date = entry[3] if len(entry) > 3 else None
+        assert isinstance(builder, GameBuilder)
         nbastats += _pbp_rows(builder, game_id)
-        datanba += _datanba_rows(builder, game_id, date_iso)
-        short = game_id[2:] if game_id.startswith("00") else game_id
-        shots.append(
-            {
-                "GRID_TYPE": "Shot Chart Detail",
-                "GAME_ID": short,
-                "GAME_EVENT_ID": "8",
-                "PLAYER_ID": "101",
-                "PLAYER_NAME": "A Player",
-                "TEAM_ID": str(HOME_TEAM),
-                "TEAM_NAME": "Rivertown Otters",
-                "PERIOD": "1",
-                "LOC_X": "10",
-                "LOC_Y": "20",
-                "GAME_DATE": date_iso.replace("-", ""),
-                "HTM": "RIV",
-                "VTM": "HIL",
-            }
-        )
+        datanba += _datanba_rows(builder, game_id, date_iso, wallclk_date)
+        shots += _shot_rows(game_id, date_iso)
 
+    write_raw_archive(root, nbastats=nbastats, datanba=datanba, shots=shots)
+    return root
+
+
+def write_raw_archive(
+    directory: str | Path,
+    *,
+    nbastats: list[dict[str, str]],
+    datanba: list[dict[str, str]],
+    shots: list[dict[str, str]],
+) -> Path:
+    root = Path(directory)
+    root.mkdir(parents=True, exist_ok=True)
     _write(root / "nbastats_po_2024.csv", _NBASTATS_COLUMNS, nbastats)
     _write(root / "datanba_po_2024.csv", _DATANBA_COLUMNS, datanba)
     _write(root / "shotdetail_po_2024.csv", _SHOT_COLUMNS, shots)
     return root
+
+
+def write_official_totals(
+    directory: str | Path, totals: dict[str, dict[str, object]]
+) -> Path:
+    path = Path(directory) / "official_totals.json"
+    path.write_text(json.dumps(totals, indent=2))
+    return path
 
 
 def _write(path: Path, columns: list[str], rows: list[dict[str, str]]) -> None:
@@ -157,7 +190,7 @@ def _write(path: Path, columns: list[str], rows: list[dict[str, str]]) -> None:
             writer.writerow({c: row.get(c, "") for c in columns})
 
 
-def sample_games() -> list[tuple[str, str, GameBuilder]]:
+def sample_games() -> list[tuple[Any, ...]]:
     """Three playoff games for the same two teams: G2 has a prior game (rest
     days derivable), G1 does not (converter omits days_rest -> quarantine)."""
 

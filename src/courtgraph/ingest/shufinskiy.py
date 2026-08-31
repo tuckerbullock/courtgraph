@@ -6,28 +6,56 @@ when the live endpoints are unreachable (SRC-SHUFINSKIY; §8 pilot check 1). Thi
 module reconstructs, for one or more games, exactly the files
 :mod:`courtgraph.ingest.pipeline` consumes:
 
-* ``pbp/stats_<gid>.json``                  <- ``nbastats_*.csv``  (playbyplayv2)
+* ``pbp/stats_<gid>.json``  <- ``nbastats_*.csv`` (playbyplayv2), **rows kept in
+  the archive's order** -- ``EVENTNUM`` is not always monotonic and pbpstats
+  fixes ordering itself.
 * ``game_details/stats_{home,away}_shots_<gid>.json`` <- ``shotdetail_*.csv``
-* ``courtgraph_snapshot.json``              -- game date + teams from the CSVs;
-  ``reconciliation`` from ``datanba_*.csv`` (the **second NBA lineage**, not an
-  independent provider); rest days from the archive's own game dates.
-* ``display_names.json``                    -- id -> name, for the demo report
-  only (never a modeling input; ignored by the importer).
+* ``courtgraph_snapshot.json`` -- game date and rest days from the **validated
+  ``GAME_DATE``** in ``shotdetail_*.csv`` (not the UTC event wall-clock); teams
+  and the score-reconciliation target as described in ``reconciliation.source``.
+  An operator ``official_totals.json`` (NBA box-score totals) is used when
+  present; otherwise the data.nba.com game-feed running score, labelled as such.
+* ``display_names.json`` -- id -> name, for the demo report only (ignored by the
+  importer).
+* ``provenance.json`` -- consumed-CSV sha256s, the pinned ``shufinskiy`` commit,
+  and this converter's version.
+* ``.gitignore`` (``*``) -- the whole snapshot is NBA-derived data.
 
 Nothing here contacts the network. No value is fabricated: a game whose rest
-days cannot be derived from the archive is written without ``days_rest`` and the
-importer quarantines it.
+days or reconciliation totals cannot be determined is written without them and
+the importer quarantines it.
 """
 
 from __future__ import annotations
 
 import csv
 import datetime as _dt
+import hashlib
 import json
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from courtgraph.ingest._paths import (
+    OutputPathError,
+    assert_directory_ok,
+    assert_not_symlink,
+    reject_overlap,
+    writable,
+)
+
+CONVERTER_VERSION = "cg-shufinskiy/2"
+_CONSUMED_CSVS = (
+    "nbastats_po_2024.csv",
+    "datanba_po_2024.csv",
+    "shotdetail_po_2024.csv",
+)
+_SNAPSHOT_GITIGNORE = (
+    "# Written by `courtgraph snapshot-from-shufinskiy`. NBA-derived data\n"
+    "# (DATA_SOURCES.md 1 / 5.1) -- never commit.\n*\n"
+)
 
 # playbyplayv2 columns pbpstats reads; kept in this order in the emitted JSON.
 _PBP_COLUMNS = (
@@ -109,6 +137,13 @@ _SHOT_COLUMNS = (
     "VTM",
 )
 
+_GENERATED_SNAPSHOT_FILES = (
+    "courtgraph_snapshot.json",
+    "display_names.json",
+    "provenance.json",
+    ".gitignore",
+)
+
 
 class ShufinskiyArchiveError(ValueError):
     """Raised when the archive cannot supply what a requested game needs."""
@@ -130,34 +165,71 @@ def _pbp_cell(column: str, value: str) -> Any:
     return value or None
 
 
-@dataclass
-class _GameFacts:
-    game_id: str  # 10-digit
-    game_date: str  # ISO
-    home_team_id: int
-    away_team_id: int
-    final_score: dict[int, int]
-    period_scores: dict[int, list[int]]
-
-
 def _read_csv(path: Path) -> list[dict[str, str]]:
+    if not path.is_file():
+        raise ShufinskiyArchiveError(f"missing archive file: {path}")
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
 
 
-def _derive_datanba_facts(
-    rows: list[dict[str, str]],
-) -> tuple[str, dict[int, int], dict[int, list[int]], int, int]:
-    """From one game's data.nba.com rows: date, final + per-period score, and
-    which team id is home (the one tracked by the ``hs`` column)."""
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 16), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
-    date_iso = rows[0]["wallclk"][:10]
+
+def _pinned_commit(archive_dir: Path) -> str | None:
+    source_md = archive_dir / "SOURCE.md"
+    if not source_md.is_file():
+        return None
+    match = re.search(r"[Pp]inned commit:\s*`?([0-9a-f]{40})`?", source_md.read_text())
+    return match.group(1) if match else None
+
+
+def _archive_provenance(archive_dir: Path) -> dict[str, Any]:
+    return {
+        "source": "SRC-SHUFINSKIY (shufinskiy/nba_data) — local, not redistributable",
+        "pinned_commit": _pinned_commit(archive_dir),
+        "converter_version": CONVERTER_VERSION,
+        "consumed_csv_sha256": {
+            name: _sha256(archive_dir / name) for name in _CONSUMED_CSVS
+        },
+    }
+
+
+def _iso_game_date(raw: str) -> str | None:
+    """``shotdetail`` ``GAME_DATE`` is ``YYYYMMDD`` -- the validated game date,
+    unaffected by the UTC wall-clock rolling past midnight."""
+
+    raw = (raw or "").strip()
+    if re.fullmatch(r"\d{8}", raw):
+        return f"{raw[0:4]}-{raw[4:6]}-{raw[6:8]}"
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        return raw
+    return None
+
+
+def _game_date_from_shots(rows: list[dict[str, str]]) -> str | None:
+    for row in rows:
+        parsed = _iso_game_date(row.get("GAME_DATE", ""))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _derive_teams_and_scores(
+    rows: list[dict[str, str]],
+) -> tuple[int, int, dict[int, int], dict[int, list[int]]]:
+    """From one game's data.nba.com rows: home/away team id and the final +
+    per-period score tracked by the ``hs`` (home) / ``vs`` (visitor) columns."""
+
     home_id: int | None = None
     away_id: int | None = None
     prev_hs = prev_vs = 0
     for row in rows:
-        hs = int(row["hs"] or 0)
-        vs = int(row["vs"] or 0)
+        hs, vs = int(row["hs"] or 0), int(row["vs"] or 0)
         team = row["oftid"] or row["tid"]
         if team and team != "0":
             if hs > prev_hs and home_id is None:
@@ -167,31 +239,28 @@ def _derive_datanba_facts(
         prev_hs, prev_vs = hs, vs
     all_teams = {int(r["tid"]) for r in rows if r["tid"] and r["tid"] != "0"}
     if home_id is None and away_id is not None:
-        home_id = next(t for t in all_teams if t != away_id)
+        home_id = next((t for t in all_teams if t != away_id), None)
     if away_id is None and home_id is not None:
-        away_id = next(t for t in all_teams if t != home_id)
+        away_id = next((t for t in all_teams if t != home_id), None)
     if home_id is None or away_id is None:
-        raise ShufinskiyArchiveError(
-            "could not identify home/away team from datanba rows"
-        )
+        raise ShufinskiyArchiveError("could not identify home/away team from datanba")
 
     period_cumulative: dict[int, tuple[int, int]] = {}
     last = (0, 0)
     for row in rows:
         last = (int(row["hs"] or 0), int(row["vs"] or 0))
         period_cumulative[int(row["PERIOD"])] = last
-    periods = sorted(period_cumulative)
     home_periods: list[int] = []
     away_periods: list[int] = []
     ph = pv = 0
-    for p in periods:
+    for p in sorted(period_cumulative):
         ch, cv = period_cumulative[p]
         home_periods.append(ch - ph)
         away_periods.append(cv - pv)
         ph, pv = ch, cv
     final = {home_id: last[0], away_id: last[1]}
     period_scores = {home_id: home_periods, away_id: away_periods}
-    return date_iso, final, period_scores, home_id, away_id
+    return home_id, away_id, final, period_scores
 
 
 def _season_from_game_id(game_id: str) -> tuple[str, str]:
@@ -206,11 +275,24 @@ def _season_from_game_id(game_id: str) -> tuple[str, str]:
     return season, season_type
 
 
+def _load_official_totals(archive_dir: Path) -> dict[str, dict[str, Any]]:
+    """Optional operator-supplied NBA box-score totals, keyed by game id:
+    ``{game_id: {"final_score": {team_id: pts}, "period_scores": {...},
+    "source": "..."}}``. Preferred over the data.nba.com game feed."""
+
+    path = archive_dir / "official_totals.json"
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {_pad_game_id(str(k)): v for k, v in data.items()}
+
+
 @dataclass(frozen=True)
 class ShufinskiySnapshot:
     out_dir: Path
     game_ids: tuple[str, ...]
-    quarantine_expected: dict[str, str]  # game_id -> reason for a game with a gap
+    provenance: dict[str, Any]
+    quarantine_expected: dict[str, str]
 
 
 def build_snapshot(
@@ -220,12 +302,23 @@ def build_snapshot(
 ) -> ShufinskiySnapshot:
     archive = Path(archive_dir)
     out = Path(out_dir)
-    (out / "pbp").mkdir(parents=True, exist_ok=True)
-    (out / "game_details").mkdir(parents=True, exist_ok=True)
+
+    # Destination safety, before creating or writing anything.
+    reject_overlap(archive, out, in_label="--archive-dir", out_label="--out-dir")
+    assert_directory_ok(out)
+    if out.exists():
+        assert_not_symlink(*(out / name for name in _GENERATED_SNAPSHOT_FILES))
+
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "pbp").mkdir(exist_ok=True)
+    (out / "game_details").mkdir(exist_ok=True)
+    writable(out / ".gitignore").write_text(_SNAPSHOT_GITIGNORE, encoding="utf-8")
 
     nbastats = _read_csv(archive / "nbastats_po_2024.csv")
     datanba = _read_csv(archive / "datanba_po_2024.csv")
     shotdetail = _read_csv(archive / "shotdetail_po_2024.csv")
+    official_totals = _load_official_totals(archive)
+    provenance = _archive_provenance(archive)
 
     pbp_by_game: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in nbastats:
@@ -237,11 +330,13 @@ def build_snapshot(
     for row in shotdetail:
         shots_by_game[_pad_game_id(row["GAME_ID"])].append(row)
 
-    # A minimal schedule (game -> date, teams) across the whole archive, for rest days.
+    # Whole-archive schedule for rest days, using the validated GAME_DATE only.
     schedule: dict[str, tuple[str, set[int]]] = {}
-    for gid, rows in datanba_by_game.items():
-        teams = {int(r["tid"]) for r in rows if r["tid"] and r["tid"] != "0"}
-        schedule[gid] = (rows[0]["wallclk"][:10], teams)
+    for gid, rows in shots_by_game.items():
+        date = _game_date_from_shots(rows)
+        teams = {int(r["TEAM_ID"]) for r in rows if (r.get("TEAM_ID") or "").strip()}
+        if date is not None and len(teams) == 2:
+            schedule[gid] = (date, teams)
 
     requested = [_pad_game_id(g) for g in game_ids]
     games_meta: list[dict[str, Any]] = []
@@ -250,67 +345,114 @@ def build_snapshot(
 
     for gid in requested:
         if gid not in pbp_by_game:
-            raise ShufinskiyArchiveError(
-                f"game {gid} not present in nbastats_po_2024.csv"
-            )
+            raise ShufinskiyArchiveError(f"game {gid} not in nbastats_po_2024.csv")
         if gid not in datanba_by_game:
-            raise ShufinskiyArchiveError(
-                f"game {gid} not present in datanba_po_2024.csv"
-            )
+            raise ShufinskiyArchiveError(f"game {gid} not in datanba_po_2024.csv")
 
         pbp_rows = pbp_by_game[gid]
         _write_pbp(out, gid, pbp_rows)
-        date_iso, final, period_scores, home_id, away_id = _derive_datanba_facts(
+
+        home_id, away_id, feed_final, feed_periods = _derive_teams_and_scores(
             datanba_by_game[gid]
         )
         _write_shots(out, gid, shots_by_game.get(gid, []), home_id, away_id)
         _collect_names(names, pbp_rows)
 
+        game_date = _game_date_from_shots(shots_by_game.get(gid, []))
         season, season_type = _season_from_game_id(gid)
         entry: dict[str, Any] = {
             "game_id": gid,
-            "game_date": date_iso,
             "season": season,
             "season_type": season_type,
             "home_team_id": home_id,
             "away_team_id": away_id,
-            "reconciliation": {
-                "final_score": {str(k): v for k, v in final.items()},
-                "period_scores": {str(k): v for k, v in period_scores.items()},
-                "source": "data.nba.com lineage (datanba_*.csv) — a second NBA "
-                "surface, not an independent provider",
-            },
         }
-        rest = _rest_days(gid, date_iso, (home_id, away_id), schedule)
+        gaps: list[str] = []
+
+        if game_date is not None:
+            entry["game_date"] = game_date
+        else:
+            entry["game_date"] = ""
+            gaps.append("game_date (no validated GAME_DATE in shotdetail)")
+
+        recon = _reconciliation(
+            gid, home_id, away_id, feed_final, feed_periods, official_totals
+        )
+        entry["reconciliation"] = recon
+
+        rest = (
+            _rest_days(gid, game_date, (home_id, away_id), schedule)
+            if game_date is not None
+            else None
+        )
         if rest is not None:
             entry["days_rest"] = {str(k): v for k, v in rest.items()}
         else:
-            quarantine_expected[gid] = (
-                "missing_context — no prior game for one team in the archive; "
-                "days_rest cannot be derived and is not fabricated"
+            gaps.append("days_rest (no prior game for a team in the archive)")
+
+        if gaps:
+            quarantine_expected[gid] = "missing_context — not fabricated: " + "; ".join(
+                gaps
             )
         games_meta.append(entry)
 
-    (out / "courtgraph_snapshot.json").write_text(
+    writable(out / "courtgraph_snapshot.json").write_text(
         json.dumps(
-            {"snapshot_format": "stats_nba_pbpstats/v1", "games": games_meta},
-            indent=2,
+            {"snapshot_format": "stats_nba_pbpstats/v1", "games": games_meta}, indent=2
         ),
         encoding="utf-8",
     )
-    (out / "display_names.json").write_text(
+    writable(out / "display_names.json").write_text(
         json.dumps(names, indent=2), encoding="utf-8"
+    )
+    writable(out / "provenance.json").write_text(
+        json.dumps(provenance, indent=2, sort_keys=True), encoding="utf-8"
     )
     return ShufinskiySnapshot(
         out_dir=out,
         game_ids=tuple(requested),
+        provenance=provenance,
         quarantine_expected=quarantine_expected,
     )
 
 
+_FEED_SOURCE = (
+    "data.nba.com game feed (datanba_po_2024.csv) — the NBA's own running "
+    "score; a second NBA surface, not an independent provider"
+)
+
+
+def _reconciliation(
+    gid: str,
+    home_id: int,
+    away_id: int,
+    feed_final: dict[int, int],
+    feed_periods: dict[int, list[int]],
+    official_totals: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    supplied = official_totals.get(gid)
+    if supplied and supplied.get("final_score"):
+        final = {str(k): int(v) for k, v in supplied["final_score"].items()}
+        periods = {
+            str(k): [int(x) for x in v]
+            for k, v in (supplied.get("period_scores") or {}).items()
+        }
+        source = str(
+            supplied.get("source")
+            or "operator-supplied NBA official box-score totals (official_totals.json)"
+        )
+        return {"final_score": final, "period_scores": periods, "source": source}
+    return {
+        "final_score": {str(k): v for k, v in feed_final.items()},
+        "period_scores": {str(k): v for k, v in feed_periods.items()},
+        "source": _FEED_SOURCE,
+    }
+
+
 def _write_pbp(out: Path, gid: str, rows: list[dict[str, str]]) -> None:
+    # Rows are emitted in the archive's order -- EVENTNUM is not sorted.
     row_set = []
-    for row in sorted(rows, key=lambda r: int(r["EVENTNUM"])):
+    for row in rows:
         record = dict(row)
         record["GAME_ID"] = gid
         row_set.append([_pbp_cell(col, record.get(col, "")) for col in _PBP_COLUMNS])
@@ -321,7 +463,7 @@ def _write_pbp(out: Path, gid: str, rows: list[dict[str, str]]) -> None:
             {"name": "PlayByPlay", "headers": list(_PBP_COLUMNS), "rowSet": row_set}
         ],
     }
-    (out / "pbp" / f"stats_{gid}.json").write_text(
+    writable(out / "pbp" / f"stats_{gid}.json").write_text(
         json.dumps(payload), encoding="utf-8"
     )
 
@@ -365,10 +507,10 @@ def _write_shots(
 ) -> None:
     home_rows = [r for r in rows if (r.get("TEAM_ID") or "").strip() == str(home_id)]
     away_rows = [r for r in rows if (r.get("TEAM_ID") or "").strip() == str(away_id)]
-    (out / "game_details" / f"stats_home_shots_{gid}.json").write_text(
+    writable(out / "game_details" / f"stats_home_shots_{gid}.json").write_text(
         json.dumps(_shot_payload(home_rows, gid)), encoding="utf-8"
     )
-    (out / "game_details" / f"stats_away_shots_{gid}.json").write_text(
+    writable(out / "game_details" / f"stats_away_shots_{gid}.json").write_text(
         json.dumps(_shot_payload(away_rows, gid)), encoding="utf-8"
     )
 
@@ -398,13 +540,21 @@ def _rest_days(
     target = _dt.date.fromisoformat(game_date)
     out: dict[int, int] = {}
     for team_id in team_ids:
-        prior_dates = [
+        prior = [
             _dt.date.fromisoformat(date)
             for other_gid, (date, teams) in schedule.items()
             if other_gid != gid and team_id in teams and date < game_date
         ]
-        if not prior_dates:
+        if not prior:
             return None
-        gap = (target - max(prior_dates)).days - 1
-        out[team_id] = max(gap, 0)
+        out[team_id] = max((target - max(prior)).days - 1, 0)
     return out
+
+
+__all__ = [
+    "CONVERTER_VERSION",
+    "OutputPathError",
+    "ShufinskiyArchiveError",
+    "ShufinskiySnapshot",
+    "build_snapshot",
+]

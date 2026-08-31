@@ -234,6 +234,7 @@ def _ingest(
             "correction_set_id": snapshot.correction_set_id,
             "override_files": dict(snapshot.override_hashes),
         },
+        source_provenance=dict(snapshot.source_provenance),
     )
 
     all_stints: list[Stint] = []
