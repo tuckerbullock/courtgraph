@@ -20,6 +20,7 @@ from typing import Any
 from courtgraph.ingest._paths import (
     OutputPathError,
     assert_not_symlink,
+    ensure_gitignore_block,
     reject_overlap,
     writable,
 )
@@ -78,6 +79,41 @@ def _esc(value: Any) -> str:
     return html.escape(str(value))
 
 
+_SCORE_CHECK_CLAUSE = (
+    " The score-check source is stated per game below (an operator-supplied "
+    "official box score when provided, otherwise the data.nba.com game feed — a "
+    "second NBA surface, not an independent provider). A handful of games is "
+    "<b>not</b> evidence of predictive accuracy, calibration, or data quality "
+    "at scale."
+)
+
+
+def _source_banner(provenance: dict[str, Any]) -> str:
+    """The banner's origin sentence, derived from recorded provenance -- never
+    hard-coded. Synthetic or unlabelled inputs are not called SRC-SHUFINSKIY."""
+
+    source = str(provenance.get("source") or "").strip()
+    if not source:
+        origin = (
+            "<b>Source not recorded.</b> This ingest carried no provenance "
+            "sidecar (for example, hand-authored test fixtures), so the rows "
+            "below are <b>not</b> attributable to any real NBA archive."
+        )
+    elif "SHUFINSKIY" in source.upper():
+        origin = (
+            "<b>Real NBA play-by-play, small demonstration.</b> Source: a local "
+            f"<code>{_esc(source)}</code> archive (a re-packaging of "
+            "stats.nba.com / data.nba.com; <code>DATA_SOURCES.md</code> §1 — "
+            "local-dev-only, not redistributable)."
+        )
+    else:
+        origin = (
+            "<b>Ingest demonstration.</b> Recorded source: "
+            f"<code>{_esc(source)}</code>."
+        )
+    return f"<div class='banner'>{origin}{_SCORE_CHECK_CLAUSE}</div>"
+
+
 def render_report(
     ingest_out_dir: str | Path,
     *,
@@ -97,6 +133,8 @@ def render_report(
     for stint in stints:
         stints_by_game.setdefault(stint["game_id"], []).append(stint)
 
+    provenance = manifest.get("source_provenance") or {}
+
     parts: list[str] = [
         f"<style>{_CSS}</style>",
         f"<h1>{_esc(title)}</h1>",
@@ -104,22 +142,15 @@ def render_report(
         f"parser {_esc(manifest['parser']['tool'])} "
         f"{_esc(manifest['parser']['version'])} (file mode) · "
         f"policy {_esc(manifest['policy']['policy_version'])}</p>",
-        "<div class='banner'><b>Real NBA play-by-play, small demonstration.</b> "
-        "Source: a local <code>SRC-SHUFINSKIY</code> archive (a re-packaging of "
-        "stats.nba.com / data.nba.com; <code>DATA_SOURCES.md</code> §1 — "
-        "local-dev-only, not redistributable). The score-check source is stated "
-        "per game below (an operator-supplied official box score when provided, "
-        "otherwise the data.nba.com game feed — a second NBA surface, not an "
-        "independent provider). A handful of games is <b>not</b> evidence of "
-        "predictive accuracy, calibration, or data quality at scale.</div>",
+        _source_banner(provenance),
     ]
 
-    provenance = manifest.get("source_provenance") or {}
     if provenance:
         rows = [
+            ["recorded source", provenance.get("source", "?")],
             ["converter version", provenance.get("converter_version", "?")],
             [
-                "pinned shufinskiy commit",
+                "pinned source commit",
                 provenance.get("pinned_commit") or "(not recorded)",
             ],
         ]
@@ -355,5 +386,13 @@ def write_report(
     path.parent.mkdir(parents=True, exist_ok=True)
     writable(path).write_text(
         render_report(ingest_out_dir, snapshot_dir=snapshot_dir), encoding="utf-8"
+    )
+    # The report renders real team / player names and score lines from NBA-
+    # derived data; keep it out of Git without disturbing any .gitignore the
+    # caller already maintains in the destination directory.
+    ensure_gitignore_block(
+        path.parent,
+        [f"/{path.name}"],
+        header="# courtgraph ingest report (generated — DATA_SOURCES.md §5.1)",
     )
     return path

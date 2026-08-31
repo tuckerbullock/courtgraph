@@ -42,8 +42,10 @@ from courtgraph.ingest._paths import (
     OutputPathError,
     assert_directory_ok,
     assert_not_symlink,
+    ensure_gitignore_block,
     reject_overlap,
-    writable,
+    safe_mkdir,
+    safe_target,
 )
 
 CONVERTER_VERSION = "cg-shufinskiy/2"
@@ -52,9 +54,9 @@ _CONSUMED_CSVS = (
     "datanba_po_2024.csv",
     "shotdetail_po_2024.csv",
 )
-_SNAPSHOT_GITIGNORE = (
+_SNAPSHOT_GITIGNORE_HEADER = (
     "# Written by `courtgraph snapshot-from-shufinskiy`. NBA-derived data\n"
-    "# (DATA_SOURCES.md 1 / 5.1) -- never commit.\n*\n"
+    "# (DATA_SOURCES.md 1 / 5.1) -- never commit."
 )
 
 # playbyplayv2 columns pbpstats reads; kept in this order in the emitted JSON.
@@ -303,16 +305,20 @@ def build_snapshot(
     archive = Path(archive_dir)
     out = Path(out_dir)
 
-    # Destination safety, before creating or writing anything.
+    # Destination safety, before creating or writing anything. Every generated
+    # file -- including the ones under pbp/ and game_details/ -- is written only
+    # after `safe_target` confirms no path component is a symlink and the target
+    # resolves inside `out`, so a symlinked intermediate directory cannot
+    # redirect a write into a source file.
     reject_overlap(archive, out, in_label="--archive-dir", out_label="--out-dir")
     assert_directory_ok(out)
     if out.exists():
         assert_not_symlink(*(out / name for name in _GENERATED_SNAPSHOT_FILES))
 
     out.mkdir(parents=True, exist_ok=True)
-    (out / "pbp").mkdir(exist_ok=True)
-    (out / "game_details").mkdir(exist_ok=True)
-    writable(out / ".gitignore").write_text(_SNAPSHOT_GITIGNORE, encoding="utf-8")
+    safe_mkdir(out, out / "pbp")
+    safe_mkdir(out, out / "game_details")
+    ensure_gitignore_block(out, ["*"], header=_SNAPSHOT_GITIGNORE_HEADER)
 
     nbastats = _read_csv(archive / "nbastats_po_2024.csv")
     datanba = _read_csv(archive / "datanba_po_2024.csv")
@@ -396,16 +402,16 @@ def build_snapshot(
             )
         games_meta.append(entry)
 
-    writable(out / "courtgraph_snapshot.json").write_text(
+    safe_target(out, out / "courtgraph_snapshot.json").write_text(
         json.dumps(
             {"snapshot_format": "stats_nba_pbpstats/v1", "games": games_meta}, indent=2
         ),
         encoding="utf-8",
     )
-    writable(out / "display_names.json").write_text(
+    safe_target(out, out / "display_names.json").write_text(
         json.dumps(names, indent=2), encoding="utf-8"
     )
-    writable(out / "provenance.json").write_text(
+    safe_target(out, out / "provenance.json").write_text(
         json.dumps(provenance, indent=2, sort_keys=True), encoding="utf-8"
     )
     return ShufinskiySnapshot(
@@ -463,7 +469,7 @@ def _write_pbp(out: Path, gid: str, rows: list[dict[str, str]]) -> None:
             {"name": "PlayByPlay", "headers": list(_PBP_COLUMNS), "rowSet": row_set}
         ],
     }
-    writable(out / "pbp" / f"stats_{gid}.json").write_text(
+    safe_target(out, out / "pbp" / f"stats_{gid}.json").write_text(
         json.dumps(payload), encoding="utf-8"
     )
 
@@ -507,10 +513,10 @@ def _write_shots(
 ) -> None:
     home_rows = [r for r in rows if (r.get("TEAM_ID") or "").strip() == str(home_id)]
     away_rows = [r for r in rows if (r.get("TEAM_ID") or "").strip() == str(away_id)]
-    writable(out / "game_details" / f"stats_home_shots_{gid}.json").write_text(
+    safe_target(out, out / "game_details" / f"stats_home_shots_{gid}.json").write_text(
         json.dumps(_shot_payload(home_rows, gid)), encoding="utf-8"
     )
-    writable(out / "game_details" / f"stats_away_shots_{gid}.json").write_text(
+    safe_target(out, out / "game_details" / f"stats_away_shots_{gid}.json").write_text(
         json.dumps(_shot_payload(away_rows, gid)), encoding="utf-8"
     )
 

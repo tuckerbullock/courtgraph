@@ -110,5 +110,58 @@ class IngestReportTests(unittest.TestCase):
             )
 
 
+@unittest.skipUnless(HAS_PBPSTATS, "report is rendered from a real ingest run")
+class ReportSourceLabelTests(unittest.TestCase):
+    """The banner's origin sentence is derived from recorded provenance; a run
+    with no provenance sidecar is never labelled real SRC-SHUFINSKIY data."""
+
+    def setUp(self) -> None:
+        from courtgraph.ingest.pipeline import run_ingest
+
+        self._dir = tempfile.TemporaryDirectory()
+        self.base = Path(self._dir.name)
+        self.snapshot = self.base / "snap"
+        write_snapshot(self.snapshot, [ordinary_game()])
+        self.out = self.base / "out"
+        run_ingest(self.snapshot, self.out)  # no provenance.json written
+
+    def tearDown(self) -> None:
+        self._dir.cleanup()
+
+    def test_no_provenance_is_not_labelled_shufinskiy(self) -> None:
+        html = render_report(self.out, snapshot_dir=self.snapshot)
+        self.assertNotIn("SHUFINSKIY", html.upper())
+        self.assertIn("Source not recorded", html)
+        # the honest-limits language still stands
+        self.assertIn("evidence of predictive accuracy", html)
+
+    def test_synthetic_source_label_is_not_promoted_to_shufinskiy(self) -> None:
+        (self.snapshot / "provenance.json").write_text(
+            json.dumps({"source": "hand-authored synthetic fixture"})
+        )
+        self.out2 = self.base / "out2"
+        from courtgraph.ingest.pipeline import run_ingest
+
+        run_ingest(self.snapshot, self.out2)
+        html = render_report(self.out2, snapshot_dir=self.snapshot)
+        self.assertNotIn("SHUFINSKIY", html.upper())
+        self.assertIn("hand-authored synthetic fixture", html)
+
+    def test_write_report_auto_gitignores_and_preserves_existing_rules(self) -> None:
+        dest = self.base / "reports"
+        dest.mkdir()
+        (dest / ".gitignore").write_text("# keep me\n!notes.md\n", encoding="utf-8")
+        write_report(self.out, dest / "game_report.html", snapshot_dir=self.snapshot)
+        text = (dest / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("/game_report.html", text)
+        self.assertIn("# keep me", text)
+        self.assertIn("!notes.md", text)
+
+    def test_write_report_creates_a_gitignore_when_none_exists(self) -> None:
+        dest = self.base / "fresh"
+        write_report(self.out, dest / "r.html", snapshot_dir=self.snapshot)
+        self.assertIn("/r.html", (dest / ".gitignore").read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

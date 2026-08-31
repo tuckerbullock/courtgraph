@@ -277,6 +277,43 @@ class ShufinskiyDestinationSafetyTests(unittest.TestCase):
                 build_snapshot(archive, ["0042400082"], out)
             self.assertEqual(victim.read_bytes(), before)
 
+    def test_symlinked_intermediate_directory_is_rejected(self) -> None:
+        # Codex repro: a pre-created `pbp/` (or `game_details/`) symlink pointing
+        # at a directory of source files. `mkdir(exist_ok=True)` would silently
+        # succeed and every `_write_pbp` would land in the linked directory.
+        for linked in ("pbp", "game_details"):
+            with self.subTest(linked=linked), tempfile.TemporaryDirectory() as d:
+                base = Path(d)
+                archive = write_archive(base / "arc", sample_games())
+                victim_dir = base / "src"
+                victim_dir.mkdir()
+                victim = victim_dir / "stats_0042400082.json"
+                victim.write_bytes(b"ORIGINAL")
+                out = base / "snap"
+                out.mkdir()
+                (out / linked).symlink_to(victim_dir, target_is_directory=True)
+                with self.assertRaises(OutputPathError):
+                    build_snapshot(archive, ["0042400082"], out)
+                self.assertEqual(victim.read_bytes(), b"ORIGINAL")
+
+    def test_existing_gitignore_contents_are_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            archive = write_archive(base / "arc", sample_games())
+            out = base / "snap"
+            out.mkdir()
+            (out / ".gitignore").write_text(
+                "# operator rules\n!keep-this.txt\n", encoding="utf-8"
+            )
+            build_snapshot(archive, ["0042400082"], out)
+            first = (out / ".gitignore").read_text(encoding="utf-8")
+            self.assertIn("# operator rules", first)
+            self.assertIn("!keep-this.txt", first)
+            self.assertIn("*", first)
+            # a second run must not keep growing the file
+            build_snapshot(archive, ["0042400082"], out)
+            self.assertEqual((out / ".gitignore").read_text(encoding="utf-8"), first)
+
     def test_snapshot_dir_is_git_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
