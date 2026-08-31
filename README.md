@@ -10,9 +10,17 @@ The project will separate lineup value into individual talent, player interactio
 
 ## Current status
 
-**Stage 0: project foundation. No basketball data or modeling code has been started.**
+**One complete vertical slice of the product runs end to end on synthetic data.**
+`courtgraph demo` generates deterministic synthetic stints with a known talent /
+chemistry / context structure, builds leakage-safe chronological, unseen-pair,
+and unseen-lineup holdouts, fits an additive ridge baseline and a
+permutation-invariant low-rank player-embedding model, and reports how well each
+predicts held-out lineup value along with the talent / interaction / context
+decomposition and approximate uncertainty. The model, data, split, and artifact
+interfaces are shaped so real NBA stints replace the synthetic ones later
+without touching the models or the evaluation.
 
-The repository currently contains the complete operating blueprint for the project:
+Governing documents:
 
 - [Master research and engineering plan](docs/MASTER_PLAN.md)
 - [Current project status](docs/PROJECT_STATUS.md)
@@ -21,8 +29,6 @@ The repository currently contains the complete operating blueprint for the proje
 - [Shared coding-agent instructions](AGENTS.md)
 
 `CLAUDE.md` imports the shared instructions so Claude Code and other agents operate from the same project standards rather than relying on separate chat histories.
-
-The first implemented capability is a dependency-free project health check that verifies the supported Python runtime and required governing files.
 
 ## Development bootstrap
 
@@ -55,13 +61,38 @@ For machine-readable health output:
 uv run courtgraph doctor --json
 ```
 
-The only third-party packages are the developer tools `ruff` and `mypy`
-(pinned in the `dev` dependency group). The `courtgraph` package itself has no
-runtime dependencies, so the health check and test suite also run without `uv`:
+## Chemistry commands
+
+All three run entirely on synthetic demonstration data — no network, no NBA
+sources. They are deterministic given their seed.
+
+```bash
+# generate synthetic stints, fit both models, evaluate all three holdouts,
+# and (optionally) write a self-contained HTML report. Takes ~1 minute.
+uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
+
+# fit a model on a stint file in the versioned format (courtgraph demo writes one)
+uv run courtgraph fit --input courtgraph_demo/demo_stints.jsonl \
+    --model-out model.json --rank 3
+
+# decompose one lineup's predicted value: talent (T) + interaction (C) + context (K)
+uv run courtgraph predict --model model.json \
+    --offense 1001,1002,1003,1004,1005 --defense 1006,1007,1008,1009,1010 \
+    --context playoff=1
+```
+
+`--json` on any of them emits a stable machine-readable result.
+
+## Runtime dependency
+
+The one runtime dependency is `numpy` (pinned exactly in `pyproject.toml` and
+`uv.lock`); the developer tools are `ruff` and `mypy` (in the `dev` group). The
+`courtgraph doctor` health check imports no third-party package, so the
+dependency-free path still works:
 
 ```bash
 PYTHONPATH=src python3 -m courtgraph doctor
-PYTHONPATH=src python3 -m unittest discover -s tests -v
+PYTHONPATH=src python3 -m unittest discover -s tests -v   # chemistry tests skip if numpy is absent
 ```
 
 The package declares a standard `courtgraph` console entry point in `pyproject.toml`.
@@ -101,7 +132,12 @@ The project will treat chemistry as a model-dependent predictive quantity, not a
 
 ## Next milestone
 
-The locked `uv` environment and GitHub Actions CI are in place, with the first CI run passing on Python 3.11 and 3.13. The next single task is a concise research contract (`RESEARCH_CONTRACT.md`). The first major research milestone remains a trustworthy two-season possession/stint dataset followed by a leakage-safe ridge RAPM baseline.
+The synthetic vertical slice is in place: `courtgraph demo` runs the whole
+pipeline and the additive baseline and low-rank model are wired end to end with
+leakage-safe evaluation. The next step is to replace the synthetic stint
+generator with a real NBA possession/stint dataset (`DATA_SOURCES.md` §8), fed
+through the same `courtgraph.chemistry.stints` format, then re-run the same
+splits, models, and evaluation on real data.
 
 ## License
 

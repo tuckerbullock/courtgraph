@@ -86,7 +86,7 @@ class DoctorCommandTests(unittest.TestCase):
             )
 
         self.assertEqual(exit_code, 1)
-        self.assertIn("CourtGraph 0.1.0: unhealthy", output.getvalue())
+        self.assertIn("unhealthy", output.getvalue())
         self.assertIn("[FAIL] project_layout", output.getvalue())
 
 

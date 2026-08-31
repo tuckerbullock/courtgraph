@@ -1,0 +1,240 @@
+"""End-to-end wiring for the ``courtgraph`` chemistry commands.
+
+Keeps the CLI thin: generate or load stints, build leakage-safe splits,
+evaluate the additive baseline against the full model, fit and serialize a
+model, and produce the decomposition for a single lineup.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Any
+
+from courtgraph.chemistry.artifact import load_model, save_model
+from courtgraph.chemistry.chemistry_model import (
+    ChemistryConfig,
+    ChemistryModel,
+    LineupDecomposition,
+)
+from courtgraph.chemistry.evaluate import (
+    EvaluationSummary,
+    decomposition_examples,
+    evaluate_suite,
+)
+from courtgraph.chemistry.splits import make_all_splits
+from courtgraph.chemistry.stints import LINEUP_SIZE, read_stints, write_stints
+from courtgraph.chemistry.synthetic import GroundTruth, SyntheticConfig, generate
+
+DEFAULT_CONTEXT: dict[str, Any] = {
+    "home_offense": True,
+    "score_margin_offense": 0,
+    "period": 2,
+    "playoff": False,
+    "days_rest_offense": 1,
+    "garbage_time_weight": 1.0,
+    "season_index": 0,
+}
+
+
+@dataclass(frozen=True)
+class DemoResult:
+    summary: EvaluationSummary
+    model_path: Path
+    report_path: Path | None
+    stints_path: Path
+    examples: tuple[dict[str, Any], ...]
+
+    def headline(self) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for holdout in self.summary.holdouts:
+            rows.append(
+                {
+                    "holdout": holdout.kind,
+                    "test_groups": holdout.n_test_groups,
+                    "additive_macro_rmse": holdout.metrics.get(
+                        "additive_rmse_truth_macro",
+                        holdout.metrics.get("additive_rmse_realized_macro", 0.0),
+                    ),
+                    "full_macro_rmse": holdout.metrics.get(
+                        "full_rmse_truth_macro",
+                        holdout.metrics.get("full_rmse_realized_macro", 0.0),
+                    ),
+                    "improvement_pct": holdout.headline_improvement_pct,
+                    "leakage_violations": len(holdout.leakage_violations),
+                }
+            )
+        return rows
+
+
+def run_demo(
+    *,
+    out_dir: str | Path,
+    report_path: str | Path | None = None,
+    seed: int = 20260830,
+    n_boot: int = 8,
+    synthetic_config: SyntheticConfig | None = None,
+    chemistry_config: ChemistryConfig | None = None,
+) -> DemoResult:
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    if n_boot < 0:
+        raise ValueError("--bootstrap must be >= 0")
+    syn_cfg = synthetic_config or SyntheticConfig(seed=seed)
+    base_cfg = chemistry_config or ChemistryConfig(
+        seed=0, rank=syn_cfg.embedding_rank + 1
+    )
+    # --bootstrap always sets the interaction-ensemble size.
+    chem_cfg = replace(base_cfg, n_bootstrap=n_boot)
+    table, truth = generate(syn_cfg)
+
+    stints_path = out / "demo_stints.jsonl"
+    write_stints(table, stints_path)
+
+    splits = make_all_splits(table)
+    for manifest in splits.values():
+        manifest.write(out / f"split_{manifest.kind}.json")
+
+    model = ChemistryModel.fit(table, chem_cfg)
+    summary = evaluate_suite(
+        table, splits, config=chem_cfg, truth=truth, full_model=model
+    )
+
+    model_path = save_model(
+        model,
+        out / "demo_model.json",
+        metadata={
+            "source": "synthetic-demo",
+            "seed": seed,
+            "synthetic_config": _syn_config_dict(syn_cfg),
+            "note": (
+                "Trained on synthetic demonstration stints. Not a basketball model."
+            ),
+        },
+    )
+
+    examples = tuple(decomposition_examples(model, truth, table, count=6))
+    resolved_report: Path | None = None
+    if report_path is not None:
+        from courtgraph.chemistry.report import write_report
+
+        resolved_report = write_report(
+            Path(report_path),
+            summary=summary,
+            model=model,
+            truth=truth,
+            examples=examples,
+            seed=seed,
+        )
+
+    return DemoResult(
+        summary=summary,
+        model_path=model_path,
+        report_path=resolved_report,
+        stints_path=stints_path,
+        examples=examples,
+    )
+
+
+def fit_model_file(
+    input_path: str | Path,
+    model_out: str | Path,
+    *,
+    config: ChemistryConfig | None = None,
+) -> tuple[ChemistryModel, Path]:
+    table = read_stints(input_path)
+    if len(table) < 50:
+        raise ValueError(
+            f"{input_path}: only {len(table)} stints; need a substantially larger "
+            "table to fit a chemistry model"
+        )
+    model = ChemistryModel.fit(table, config)
+    path = save_model(
+        model,
+        model_out,
+        metadata={
+            "source": str(input_path),
+            "stints": len(table),
+            "possessions": table.total_possessions(),
+        },
+    )
+    return model, path
+
+
+def evaluate_model_file(
+    input_path: str | Path,
+    *,
+    config: ChemistryConfig | None = None,
+) -> EvaluationSummary:
+    table = read_stints(input_path)
+    splits = make_all_splits(table)
+    return evaluate_suite(table, splits, config=config, truth=None)
+
+
+@dataclass(frozen=True)
+class PredictionResult:
+    offense: tuple[int, ...]
+    defense: tuple[int, ...]
+    context: dict[str, Any]
+    decomposition: LineupDecomposition
+    support: dict[str, Any]
+    interaction_interval: dict[str, Any]
+    model_metadata: dict[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "offense": list(self.offense),
+            "defense": list(self.defense),
+            "context": dict(self.context),
+            "decomposition": self.decomposition.as_dict(),
+            "support": dict(self.support),
+            "interaction_interval": dict(self.interaction_interval),
+            "model_metadata": dict(self.model_metadata),
+        }
+
+
+def predict_lineup(
+    model_path: str | Path,
+    offense: list[int],
+    defense: list[int],
+    *,
+    context: dict[str, Any] | None = None,
+) -> PredictionResult:
+    if len(offense) != LINEUP_SIZE or len(defense) != LINEUP_SIZE:
+        raise ValueError("offense and defense each need exactly 5 player ids")
+    if len(set(offense)) != LINEUP_SIZE or len(set(defense)) != LINEUP_SIZE:
+        raise ValueError("offense and defense player ids must be distinct")
+    if set(offense) & set(defense):
+        raise ValueError("a player cannot be on both offense and defense")
+    model, meta = load_model(model_path)
+    merged = {**DEFAULT_CONTEXT, **(context or {})}
+    off_t = tuple(sorted(int(p) for p in offense))
+    def_t = tuple(sorted(int(p) for p in defense))
+    decomp = model.decompose(off_t, def_t, merged)
+    return PredictionResult(
+        offense=off_t,
+        defense=def_t,
+        context=merged,
+        decomposition=decomp,
+        support=model.lineup_support(off_t),
+        interaction_interval=model.interaction_interval(off_t),
+        model_metadata=meta,
+    )
+
+
+def _syn_config_dict(cfg: SyntheticConfig) -> dict[str, Any]:
+    return {
+        "seed": cfg.seed,
+        "n_players": cfg.n_players,
+        "n_teams": cfg.n_teams,
+        "n_seasons": cfg.n_seasons,
+        "games_per_matchup": cfg.games_per_matchup,
+        "stints_per_game": cfg.stints_per_game,
+        "embedding_rank": cfg.embedding_rank,
+        "interaction_scale": cfg.interaction_scale,
+    }
+
+
+def summarize_ground_truth(truth: GroundTruth) -> dict[str, Any]:
+    return truth.as_dict()
