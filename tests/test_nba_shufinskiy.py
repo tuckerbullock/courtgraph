@@ -12,10 +12,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _nba_fixtures import AWAY_TEAM, HOME_TEAM  # noqa: E402
+from _nba_fixtures import AWAY_TEAM, HOME_TEAM, ordinary_game  # noqa: E402
 from _shufinskiy_fixture import (  # noqa: E402
     sample_games,
     write_archive,
+    write_multi_season_archive,
     write_official_totals,
     write_raw_archive,
 )
@@ -196,7 +197,7 @@ class ShufinskiyConverterTests(unittest.TestCase):
             self.assertEqual(snap.archive_coverage["complete_games"], 2)
             excluded = snap.archive_coverage["excluded_games"]
             self.assertEqual(excluded[0]["game_id"], "0042400083")
-            self.assertEqual(excluded[0]["missing_inputs"], ["datanba_po_2024.csv"])
+            self.assertEqual(excluded[0]["missing_inputs"], ["datanba"])
             provenance = json.loads((snap.out_dir / "provenance.json").read_text())
             self.assertEqual(provenance["archive_coverage"], snap.archive_coverage)
 
@@ -206,6 +207,73 @@ class ShufinskiyConverterTests(unittest.TestCase):
             self.assertRaises(ShufinskiyArchiveError),
         ):
             build_snapshot(self.archive, ["0049999999"], Path(directory) / "s")
+
+
+class ShufinskiyMultiSeasonTests(unittest.TestCase):
+    """One archive holding several seasons of regular-season CSVs."""
+
+    def _archive(self, directory: Path) -> Path:
+        # Season 2020-21: two games for the same two teams (game 2 has rest).
+        # Season 2021-22: one game -> its own season opener.
+        return write_multi_season_archive(
+            directory / "arc",
+            {
+                "2020": [
+                    ("0022000001", "2020-12-22", ordinary_game("0022000001").builder),
+                    ("0022000015", "2020-12-25", ordinary_game("0022000015").builder),
+                ],
+                "2021": [
+                    ("0022100001", "2021-10-19", ordinary_game("0022100001").builder),
+                ],
+            },
+        )
+
+    def test_every_season_file_is_discovered_and_hashed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            archive = self._archive(Path(directory))
+            snap = build_snapshot(archive, None, Path(directory) / "snap")
+            self.assertEqual(snap.game_ids, ("0022000001", "0022000015", "0022100001"))
+            index = json.loads((snap.out_dir / "courtgraph_snapshot.json").read_text())
+            seasons = {g["season"] for g in index["games"]}
+            self.assertEqual(seasons, {"2020-21", "2021-22"})
+            digests = json.loads((snap.out_dir / "provenance.json").read_text())[
+                "consumed_csv_sha256"
+            ]
+            self.assertEqual(
+                set(digests),
+                {
+                    "nbastats_2020.csv",
+                    "nbastats_2021.csv",
+                    "datanba_2020.csv",
+                    "datanba_2021.csv",
+                    "shotdetail_2020.csv",
+                    "shotdetail_2021.csv",
+                },
+            )
+
+    def test_rest_days_are_bounded_to_the_same_season(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            archive = self._archive(Path(directory))
+            snap = build_snapshot(archive, None, Path(directory) / "snap")
+            index = json.loads((snap.out_dir / "courtgraph_snapshot.json").read_text())
+            by_id = {g["game_id"]: g for g in index["games"]}
+            # Game 2 of 2020-21: rest counted from the 2020-12-22 game (2 days).
+            self.assertEqual(
+                by_id["0022000015"]["days_rest"],
+                {str(HOME_TEAM): 2, str(AWAY_TEAM): 2},
+            )
+            # The 2021-22 opener must NOT borrow the prior season's last game as
+            # a "prior game" (~300 days) -- it has no same-season predecessor.
+            self.assertNotIn("days_rest", by_id["0022100001"])
+            self.assertIn("0022100001", snap.quarantine_expected)
+
+    def test_missing_one_provider_for_a_season_is_a_clear_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            archive = self._archive(Path(directory))
+            (archive / "datanba_2020.csv").unlink()
+            (archive / "datanba_2021.csv").unlink()
+            with self.assertRaises(ShufinskiyArchiveError):
+                build_snapshot(archive, None, Path(directory) / "snap")
 
 
 class ShufinskiyEdgeCaseTests(unittest.TestCase):

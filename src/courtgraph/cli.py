@@ -118,15 +118,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     shuf = subparsers.add_parser(
         "snapshot-from-shufinskiy",
-        help="build a stats_nba_pbpstats/v1 snapshot from games in a "
-        "local SRC-SHUFINSKIY playoffs archive (local-dev-only; no network)",
+        help="build a stats_nba_pbpstats/v1 snapshot from a local "
+        "SRC-SHUFINSKIY archive of one or more seasons (local-dev-only; no network)",
     )
     shuf.add_argument(
         "--archive-dir",
         type=Path,
         required=True,
-        help="directory holding nbastats_po_2024.csv / datanba_po_2024.csv / "
-        "shotdetail_po_2024.csv",
+        help="directory holding the archive's nbastats*.csv / datanba*.csv / "
+        "shotdetail*.csv (one file per provider, or one per provider per season)",
     )
     shuf_selection = shuf.add_mutually_exclusive_group(required=True)
     shuf_selection.add_argument(
@@ -138,7 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     shuf_selection.add_argument(
         "--all-games",
         action="store_true",
-        help="include every game present in all three local archive inputs",
+        help="include every game present in all three providers' archive inputs",
     )
     shuf.add_argument(
         "--out-dir", type=Path, required=True, help="snapshot directory to create"
@@ -421,10 +421,17 @@ def _cmd_snapshot_from_shufinskiy(args: argparse.Namespace, stream: TextIO) -> i
             f"{snap.out_dir}  (local SRC-SHUFINSKIY archive; no network)",
             file=stream,
         )
-        for gid in snap.game_ids:
-            note = snap.quarantine_expected.get(gid)
+        if len(snap.game_ids) <= 50:
+            for gid in snap.game_ids:
+                note = snap.quarantine_expected.get(gid)
+                print(
+                    f"  {gid}" + (f"  — will quarantine: {note}" if note else ""),
+                    file=stream,
+                )
+        elif snap.quarantine_expected:
             print(
-                f"  {gid}" + (f"  — will quarantine: {note}" if note else ""),
+                f"  {len(snap.quarantine_expected)} game(s) expected to quarantine "
+                "for missing context (see the ingest manifest for the breakdown)",
                 file=stream,
             )
     return 0
