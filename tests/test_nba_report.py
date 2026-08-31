@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -161,6 +162,37 @@ class ReportSourceLabelTests(unittest.TestCase):
         dest = self.base / "fresh"
         write_report(self.out, dest / "r.html", snapshot_dir=self.snapshot)
         self.assertIn("/r.html", (dest / ".gitignore").read_text(encoding="utf-8"))
+
+    def test_two_reports_in_one_directory_both_stay_ignored(self) -> None:
+        repo = self.base / "repo"
+        dest = repo / "reports"
+        dest.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        (dest / ".gitignore").write_text("# caller rule\n!keep.md\n", encoding="utf-8")
+
+        write_report(self.out, dest / "game_a.html", snapshot_dir=self.snapshot)
+        write_report(self.out, dest / "game_b.html", snapshot_dir=self.snapshot)
+
+        def ignored(rel: str) -> bool:
+            return (
+                subprocess.run(
+                    ["git", "check-ignore", "-q", f"reports/{rel}"], cwd=repo
+                ).returncode
+                == 0
+            )
+
+        # the first report is not dropped when the second is added
+        self.assertTrue(ignored("game_a.html"))
+        self.assertTrue(ignored("game_b.html"))
+        text = (dest / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("# caller rule", text)
+        self.assertIn("!keep.md", text)
+
+        # a repeated run of an already-recorded report is a no-op
+        before = text
+        write_report(self.out, dest / "game_a.html", snapshot_dir=self.snapshot)
+        self.assertEqual((dest / ".gitignore").read_text(encoding="utf-8"), before)
+        self.assertEqual(before.count("/game_a.html"), 1)
 
 
 if __name__ == "__main__":

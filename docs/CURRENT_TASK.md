@@ -42,12 +42,17 @@ The importer now runs on **real NBA play-by-play**, with a readable report.
 - **Manifest** now carries `source_provenance` and, per game,
   `reconciliation.official_score_source`.
 - **CLI**: `courtgraph snapshot-from-shufinskiy`; `courtgraph ingest --report`.
-- **Tests (+23)**: CSV order preserved with non-monotonic `EVENTNUM`; `GAME_DATE`
+- `ensure_gitignore_block` **merges and de-duplicates** the patterns already in
+  its managed block with the new ones, so writing a second differently named
+  report into one directory leaves the first still ignored; caller rules and
+  repeated-run stability are preserved.
+- **Tests (+24)**: CSV order preserved with non-monotonic `EVENTNUM`; `GAME_DATE`
   used across a UTC-midnight crossing (date + rest); provenance recorded;
   `official_totals.json` preferred; destination overlap / file- and
   directory-symlink rejected (`pbp/`, `game_details/` validated before any
   write); existing snapshot `.gitignore` preserved; report auto-gitignored
-  (existing rules kept); report provenance + recorded score source; banner
+  (existing rules kept); two differently named reports in one directory both
+  stay `git check-ignore`d; report provenance + recorded score source; banner
   source label derived from provenance (synthetic / unlabelled inputs are not
   called SRC-SHUFINSKIY); unsafe report path rejection.
 
@@ -99,11 +104,11 @@ reconciliation lineage is still unavailable (`DATA_SOURCES.md` §5.2).
 ```
 uv lock --locked                                    # 15 packages, no drift
 uv run courtgraph doctor                             # healthy
-uv run python -m unittest discover -s tests -v       # 132 tests OK (23 new this milestone)
+uv run python -m unittest discover -s tests -v       # 133 tests OK (24 new this milestone)
 uv run python -m compileall -q src tests             # OK
 uv run ruff check . ; uv run ruff format --check .   # clean
 uv run mypy                                          # 40 source files, clean
-PYTHONPATH=src python3 -m courtgraph doctor / unittest  # 132 OK (28 skipped: no pbpstats)
+PYTHONPATH=src python3 -m courtgraph doctor / unittest  # 133 OK (28 skipped: no pbpstats)
 uv run courtgraph demo --bootstrap 0                 # synthetic slice unchanged; 0 ensemble members
 courtgraph snapshot-from-shufinskiy ... ; courtgraph ingest ... --report report.html
 ```

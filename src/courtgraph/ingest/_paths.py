@@ -98,15 +98,38 @@ def writable(path: Path) -> Path:
     return path
 
 
-def _strip_managed_block(lines: list[str]) -> list[str]:
+def _managed_block_bounds(lines: list[str]) -> tuple[int, int] | None:
     if _GITIGNORE_BLOCK_START not in lines:
-        return list(lines)
+        return None
     start = lines.index(_GITIGNORE_BLOCK_START)
     end = next(
         (i for i in range(start + 1, len(lines)) if lines[i] == _GITIGNORE_BLOCK_END),
-        len(lines) - 1,
+        len(lines),
     )
-    return lines[:start] + lines[end + 1 :]
+    return start, end
+
+
+def _strip_managed_block(lines: list[str]) -> list[str]:
+    bounds = _managed_block_bounds(lines)
+    if bounds is None:
+        return list(lines)
+    start, end = bounds
+    return lines[:start] + lines[min(end + 1, len(lines)) :]
+
+
+def _existing_managed_entries(lines: list[str]) -> list[str]:
+    """The pattern lines already inside the managed block (comments dropped) --
+    so a second call adds to them instead of replacing them."""
+
+    bounds = _managed_block_bounds(lines)
+    if bounds is None:
+        return []
+    start, end = bounds
+    return [
+        line.strip()
+        for line in lines[start + 1 : end]
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
 
 
 def ensure_gitignore_block(
@@ -116,27 +139,37 @@ def ensure_gitignore_block(
     for a whole snapshot, or ``["/report.html"]`` for one file), **preserving**
     anything the caller already put there.
 
-    The managed block is (re)written at the end of the file so its anchored
-    patterns win over any earlier negation; rewriting it in place keeps repeat
-    runs from growing the file.
+    Patterns already recorded in the managed block are kept and merged with the
+    new ``entries`` (order preserved, duplicates dropped), so writing a second
+    differently named report into one directory leaves the first still ignored.
+    The block is (re)written at the end of the file so its anchored patterns win
+    over any earlier negation; rewriting it in place keeps repeat runs from
+    growing the file.
     """
 
     path = directory / ".gitignore"
     assert_not_symlink(path)
+    original = path.read_text(encoding="utf-8") if path.exists() else None
+    prior_lines = original.splitlines() if original is not None else []
+
+    merged: list[str] = []
+    for entry in [*_existing_managed_entries(prior_lines), *entries]:
+        if entry not in merged:
+            merged.append(entry)
+
     managed = [
         _GITIGNORE_BLOCK_START,
         "# Anchored last so these win over any earlier negation "
         "(Git: last match wins).",
-        *entries,
+        *merged,
         _GITIGNORE_BLOCK_END,
     ]
-    if not path.exists():
+    if original is None:
         directory.mkdir(parents=True, exist_ok=True)
         prefix = [*header.splitlines(), ""] if header else []
         path.write_text("\n".join([*prefix, *managed]) + "\n", encoding="utf-8")
         return
-    original = path.read_text(encoding="utf-8")
-    kept = _strip_managed_block(original.splitlines())
+    kept = _strip_managed_block(prior_lines)
     while kept and not kept[-1].strip():
         kept.pop()
     new_lines = kept + (["", *managed] if kept else list(managed))
