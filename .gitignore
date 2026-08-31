@@ -20,6 +20,10 @@ artifacts/
 checkpoints/
 mlruns/
 
+# courtgraph chemistry demo output (default paths)
+courtgraph_demo/
+demo_report.html
+
 # Notebooks and local tools
 .ipynb_checkpoints/
 .DS_Store

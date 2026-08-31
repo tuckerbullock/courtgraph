@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "courtgraph"
-version = "0.1.0"
+version = "0.2.0"
 description = "Research-grade NBA lineup chemistry modeling and evaluation."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,7 +20,9 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Topic :: Scientific/Engineering :: Information Analysis",
 ]
-dependencies = []
+dependencies = [
+  "numpy==2.3.5",
+]
 
 [project.scripts]
 courtgraph = "courtgraph.cli:main"
