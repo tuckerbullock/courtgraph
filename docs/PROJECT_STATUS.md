@@ -1,12 +1,15 @@
 # Project Status
 
-Last updated: 2026-08-30 (synthetic chemistry vertical slice)
+Last updated: 2026-08-31 (offline NBA snapshot -> stint importer)
 
 ## Current phase
 
 Vertical-slice prototype — one full path through the product on **synthetic**
 data (model ladder rungs 0/2 and 5/6 of `RESEARCH_CONTRACT.md` §11), with
-leakage-safe evaluation. Real NBA data is not yet ingested.
+leakage-safe evaluation, plus a fixture-tested **offline importer**
+(`courtgraph ingest`) from stored `stats.nba.com` snapshots into the same stint
+format. No real snapshot has been ingested yet; real-data validation is
+pending.
 
 ## Completed
 
@@ -36,10 +39,17 @@ leakage-safe evaluation. Real NBA data is not yet ingested.
   - `report.py` — a self-contained HTML report; `artifact.py` — versioned model serialization.
   - CLI: `courtgraph demo [--report PATH]`, `courtgraph fit`, `courtgraph predict`.
   - `tests/test_chemistry_*.py` — deterministic tests for the decomposition identity, permutation invariance, serialization round-trips, leakage-safe splits (including caught leaks), CLI behaviour, additive-talent recovery, and recovery of a real interaction signal beyond the additive baseline (with a matched no-signal control).
+- Added the **offline NBA snapshot -> stint importer** (`src/courtgraph/ingest/`, `pbpstats==1.3.11` pinned in an `ingest` dependency group, lazily imported):
+  - `snapshot.py` — the documented `stats_nba_pbpstats/v1` layout (raw `stats.nba.com` `playbyplayv2` / `shotchartdetail` files + a `courtgraph_snapshot.json` metadata index); per-file hashes; a throwaway working copy so the snapshot stays immutable.
+  - `possessions.py` — `pbpstats` in **file-only mode** as the reconstruction tool, wrapped in an offline guard that turns any network attempt into a quarantine.
+  - `validate.py` — CourtGraph's own checks: five per side, possession alternation, exact final-score reconciliation against the independent box-score total, and per-possession exclusion (empty / split-lineup / ambiguous scoring). Never fabricates a value to satisfy the schema.
+  - `stints.py` / `pipeline.py` — emits `courtgraph.chemistry.stints` records (non-contiguous same-lineup spells never merged), plus `quarantine.jsonl` and a full `manifest.json` audit trail. `courtgraph ingest --snapshot-dir PATH --out-dir DIR`.
+  - `tests/test_nba_*` — hand-authored, NBA-shaped fixtures parsed by real `pbpstats`; covers ordinary play, offensive rebounds, free throws + technical, substitutions, overtime, malformed inputs, reconciliation failure, missing files, immutability, and no-network proof.
 
 ## Not started
 
-- Real data acquisition, possession/stint reconstruction (`DATA_SOURCES.md` §8).
+- **Real NBA data acquisition** and a real snapshot run through `courtgraph ingest` (`DATA_SOURCES.md` §8); real-data validation is pending.
+- The contract's independent-parser gate and multi-game reconciliation gate; minute/lineup-minute reconciliation.
 - Model-ladder rungs 1, 3, 4, and 7; calibrated Bayesian uncertainty.
 - Transaction backtest (T4); the contract's full six-part evidence bar.
 - Dashboard or API implementation.

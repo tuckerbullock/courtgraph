@@ -28,9 +28,17 @@ dependencies = [
 courtgraph = "courtgraph.cli:main"
 
 [dependency-groups]
+# Offline NBA snapshot -> stint ingestion. pbpstats is used only as a file-mode
+# possession/lineup reconstruction tool (DATA_SOURCES.md SRC-PBPSTATS): its
+# ``pbpstats.com`` hosted archive is never used. ``courtgraph ingest`` lazily
+# imports it; ``courtgraph doctor`` and the chemistry path never do.
+ingest = [
+  "pbpstats==1.3.11",
+]
 dev = [
   "ruff==0.16.5",
   "mypy==2.3.1",
+  { include-group = "ingest" },
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -49,3 +57,9 @@ python_version = "3.11"
 files = ["src", "tests"]
 mypy_path = "src"
 strict = true
+
+[[tool.mypy.overrides]]
+# pbpstats ships no type information; the ingest adapter keeps its use behind a
+# typed boundary (courtgraph.ingest.possessions).
+module = ["pbpstats.*"]
+ignore_missing_imports = true

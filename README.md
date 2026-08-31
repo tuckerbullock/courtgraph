@@ -83,12 +83,38 @@ uv run courtgraph predict --model model.json \
 
 `--json` on any of them emits a stable machine-readable result.
 
+## Offline NBA ingestion (`courtgraph ingest`)
+
+`courtgraph ingest` converts a stored, immutable snapshot of `stats.nba.com`
+responses into stint records in the same versioned format the chemistry
+commands consume. It uses `pbpstats` **in file-only mode** purely as a
+possession / lineup reconstruction tool, never contacts the network, never
+modifies the snapshot, and **quarantines rather than fabricates** when an input
+is ambiguous or incomplete.
+
+```bash
+uv run courtgraph ingest --snapshot-dir path/to/snapshot --out-dir ingest_out
+uv run courtgraph fit --input ingest_out/stints.jsonl --model-out model.json
+```
+
+`--out-dir` receives `stints.jsonl`, `quarantine.jsonl` (dropped possessions /
+quarantined games with reasons), and `manifest.json` (input hashes, tool and
+policy versions, per-game reconciliation). The snapshot and destination are
+validated before anything is written: an `--out-dir` that resolves into the
+snapshot, is a non-directory, or holds a symlinked output file is rejected. The
+run adds a `.gitignore` covering the generated data (preserving any the caller
+already placed there). The snapshot layout (`stats_nba_pbpstats/v1`) is
+documented in `src/courtgraph/ingest/snapshot.py`. Real snapshots, working
+copies, derived stint rows, and manifests are gitignored (`DATA_SOURCES.md`
+§1/§5.1); only hand-authored fixtures under `tests/` are committed.
+
 ## Runtime dependency
 
 The one runtime dependency is `numpy` (pinned exactly in `pyproject.toml` and
-`uv.lock`); the developer tools are `ruff` and `mypy` (in the `dev` group). The
-`courtgraph doctor` health check imports no third-party package, so the
-dependency-free path still works:
+`uv.lock`); the developer tools are `ruff` and `mypy` (in the `dev` group).
+`pbpstats` (pinned) is an `ingest` dependency group, imported lazily only by
+`courtgraph ingest`. The `courtgraph doctor` health check imports no
+third-party package, so the dependency-free path still works:
 
 ```bash
 PYTHONPATH=src python3 -m courtgraph doctor
@@ -132,12 +158,13 @@ The project will treat chemistry as a model-dependent predictive quantity, not a
 
 ## Next milestone
 
-The synthetic vertical slice is in place: `courtgraph demo` runs the whole
-pipeline and the additive baseline and low-rank model are wired end to end with
-leakage-safe evaluation. The next step is to replace the synthetic stint
-generator with a real NBA possession/stint dataset (`DATA_SOURCES.md` §8), fed
-through the same `courtgraph.chemistry.stints` format, then re-run the same
-splits, models, and evaluation on real data.
+The synthetic vertical slice runs end to end, and `courtgraph ingest` provides
+a fixture-tested offline adapter from stored `stats.nba.com` snapshots into the
+same stint format. The next step is to obtain a permitted real snapshot
+(`DATA_SOURCES.md` §8), run it through `ingest`, and re-run the same splits,
+models, and evaluation on real data. Real-data validation (multi-game
+reconciliation, an independent parser, the six-part evidence bar) is still
+pending.
 
 ## License
 
