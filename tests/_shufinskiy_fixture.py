@@ -133,17 +133,9 @@ def _shot_rows(game_id: str, date_iso: str) -> list[dict[str, str]]:
     ]
 
 
-def write_archive(
-    directory: str | Path,
+def _rows_for(
     games: list[tuple[Any, ...]],
-) -> Path:
-    """``games`` = list of (game_id, game_date_iso, builder[, wallclk_date_iso])."""
-
-    root = Path(directory)
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "SOURCE.md").write_text(
-        "# fixture\nPinned commit: `0123456789abcdef0123456789abcdef01234567`\n"
-    )
+) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
     nbastats: list[dict[str, str]] = []
     datanba: list[dict[str, str]] = []
     shots: list[dict[str, str]] = []
@@ -154,8 +146,45 @@ def write_archive(
         nbastats += _pbp_rows(builder, game_id)
         datanba += _datanba_rows(builder, game_id, date_iso, wallclk_date)
         shots += _shot_rows(game_id, date_iso)
+    return nbastats, datanba, shots
 
+
+def _write_source_md(root: Path) -> None:
+    (root / "SOURCE.md").write_text(
+        "# fixture\nPinned commit: `0123456789abcdef0123456789abcdef01234567`\n"
+    )
+
+
+def write_archive(
+    directory: str | Path,
+    games: list[tuple[Any, ...]],
+) -> Path:
+    """``games`` = list of (game_id, game_date_iso, builder[, wallclk_date_iso])."""
+
+    root = Path(directory)
+    root.mkdir(parents=True, exist_ok=True)
+    _write_source_md(root)
+    nbastats, datanba, shots = _rows_for(games)
     write_raw_archive(root, nbastats=nbastats, datanba=datanba, shots=shots)
+    return root
+
+
+def write_multi_season_archive(
+    directory: str | Path,
+    seasons: dict[str, list[tuple[Any, ...]]],
+) -> Path:
+    """One archive holding several seasons: ``seasons`` maps a file stem suffix
+    (e.g. ``"2020"``, ``"2021"``) to that season's game tuples. Writes one
+    ``{provider}_{suffix}.csv`` set per season, like the real multi-season pull."""
+
+    root = Path(directory)
+    root.mkdir(parents=True, exist_ok=True)
+    _write_source_md(root)
+    for suffix, games in seasons.items():
+        nbastats, datanba, shots = _rows_for(games)
+        write_raw_archive(
+            root, nbastats=nbastats, datanba=datanba, shots=shots, suffix=suffix
+        )
     return root
 
 
@@ -165,12 +194,13 @@ def write_raw_archive(
     nbastats: list[dict[str, str]],
     datanba: list[dict[str, str]],
     shots: list[dict[str, str]],
+    suffix: str = "po_2024",
 ) -> Path:
     root = Path(directory)
     root.mkdir(parents=True, exist_ok=True)
-    _write(root / "nbastats_po_2024.csv", _NBASTATS_COLUMNS, nbastats)
-    _write(root / "datanba_po_2024.csv", _DATANBA_COLUMNS, datanba)
-    _write(root / "shotdetail_po_2024.csv", _SHOT_COLUMNS, shots)
+    _write(root / f"nbastats_{suffix}.csv", _NBASTATS_COLUMNS, nbastats)
+    _write(root / f"datanba_{suffix}.csv", _DATANBA_COLUMNS, datanba)
+    _write(root / f"shotdetail_{suffix}.csv", _SHOT_COLUMNS, shots)
     return root
 
 

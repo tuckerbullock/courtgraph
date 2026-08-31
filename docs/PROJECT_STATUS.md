@@ -1,18 +1,30 @@
 # Project Status
 
-Last updated: 2026-08-31 (full local playoff archive in browser app)
+Last updated: 2026-08-31 (five regular NBA seasons ingested)
 
 ## Current phase
 
-Local browser prototype: `courtgraph app` provides an observational game
-explorer and a separate synthetic lineup sandbox. The explorer now uses the
-complete local 2025 playoff archive: 84 games found, 83 attempted, 62 accepted,
-21 quarantined, and one missing a required feed. This is broader observational
-coverage, not a fitted or validated real-NBA model. Full-season and multi-season
-validation remain pending. No demonstrated betting edge exists.
+Real regular-season data is in. `courtgraph ingest` has been run once over a
+local, gitignored **five-season regular-season archive (2020-21 → 2024-25)**:
+5,998 games with all three provider inputs, **5,158 accepted → 266,518 stints,
+941,897 accepted possessions**, 30 teams, 985 players. 840 games (14%) are
+quarantined, the majority (`network_required`, 503) because `pbpstats` wants a
+box-score call the offline guard blocks. The 2024-25 playoffs archive is
+untouched and held out for the transport test (`DATA_SOURCES.md` §6).
+
+This is observational data only — **no model has been fit or evaluated on it
+yet**. The score check is within-NBA (stats reconstruction vs data.nba.com
+feed), not an independent lineage. No demonstrated betting edge exists.
 
 ## Completed
 
+- **Real regular-season ingestion (2020-21 → 2024-25).** The SRC-SHUFINSKIY
+  importer, generalized to multi-season archives (glob file discovery; rest
+  days bounded to the same season; provenance hashes every consumed CSV;
+  `CONVERTER_VERSION` `cg-shufinskiy/3`), run end to end: acquire (local,
+  gitignored) → `snapshot-from-shufinskiy --all-games` → `ingest` → 266,518
+  stints in the versioned `courtgraph.chemistry.stints` format. Coverage,
+  per-season splits, and the quarantine breakdown are in `docs/CURRENT_TASK.md`.
 - Local browser app (`src/courtgraph/app/`, `courtgraph app`), with no new
   dependencies: explicit read-only ingest inputs, verified stint checksum and
   per-game exposure, game/team/player/sample filters, observed lineup rates,
@@ -65,7 +77,14 @@ validation remain pending. No demonstrated betting edge exists.
 
 ## Not started
 
-- Full-season and multi-season permitted data ingestion and real-NBA model validation; the local 2025 playoff archive is loaded.
+- **Real-NBA model validation** — leakage-safe splits + ridge RAPM baseline +
+  low-rank model on the 266k regular-season stints, vs the contract's rung-2/3
+  references. Data is loaded; nothing is fit yet.
+- Recovering the 840 quarantined regular-season games (503 `network_required`,
+  170 pbpstats back-to-back exceptions, 93 score-reconciliation failures);
+  nullable `days_rest` (stint schema v3) for the 68 season-opener quarantines.
+- 2025-26 regular season (no play-by-play from this source yet) and
+  2016-17 → 2019-20 (contract-gated on data-quality checks).
 - The contract's independent-parser gate and multi-game reconciliation gate; minute/lineup-minute reconciliation.
 - Model-ladder rungs 1, 3, 4, and 7; calibrated Bayesian uncertainty.
 - Transaction backtest (T4); the contract's full six-part evidence bar.
@@ -99,12 +118,12 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 155 unit tests, Ruff, mypy over 45 source
-files, and JavaScript syntax validation. The full-archive pipeline was run end
+The current implementation passes 158 unit tests, Ruff, mypy over 45 source
+files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
---ingest-dir`): 84 games found, 83 with all three inputs, 62 accepted, 21
-quarantined, one missing a feed; the app's `/api/state` reports matching
-coverage. A manual look at the rendered coverage screen is still worthwhile.
+--ingest-dir`) on the local five-season regular-season archive: 6,000 games
+found, 5,998 with all three inputs, 5,158 accepted, 840 quarantined, two missing
+the feed; the app's `/api/state` reports matching coverage with real names.
 
 On the default synthetic dataset (17k stints, deterministic) the low-rank model
 beats the additive baseline on macro held-out lineup value (vs the known truth)
@@ -115,11 +134,11 @@ no-signal control produces no improvement.
 
 ## Next verifiable outcome
 
-Extend permitted real-NBA inputs to full seasons and multiple seasons, improve
-reconstruction coverage for the 21 quarantined playoff games, then run
-chronological baseline comparisons and the contract evidence gates. Preserve the synthetic
-generator as a separate control; do not replace it or present its estimates
-as NBA forecasts.
+Run the leakage-safe splits (chronological, unseen-pair, unseen-lineup), the
+additive ridge RAPM baseline, and the low-rank chemistry model on the 266k
+real regular-season stints, and compare held-out prediction to the contract's
+rung-2/3 reference baselines. Preserve the synthetic generator as a separate
+control; do not replace it or present its estimates as NBA forecasts.
 
 ## Governing document
 
