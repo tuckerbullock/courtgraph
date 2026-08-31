@@ -2,7 +2,7 @@
 
 > **Living master plan — version 0.1**  
 > **Status:** research and implementation blueprint  
-> **Last updated:** 2026-08-29  
+> **Last updated:** 2026-08-31  
 > **Working product names:** CourtGraph, LineupLab, NBA Chemistry Engine  
 > **North-star question:** *Can we estimate how NBA players will fit together before we have observed that exact combination on the court?*
 
@@ -82,6 +82,7 @@ This plan deliberately starts with data validity and conservative baselines. Adv
 41. [Decision log and experiment registry templates](#41-decision-log-and-experiment-registry-templates)
 42. [Definition of done](#42-definition-of-done)
 43. [Selected references](#43-selected-references)
+44. [Appended product capabilities and example scenarios](#44-appended-product-capabilities-and-example-scenarios)
 
 ---
 
@@ -4609,3 +4610,98 @@ The first implementation milestone is intentionally narrow:
 > **Build and audit a trustworthy two-season possession/stint dataset, then reproduce a leakage-safe ridge RAPM baseline.**
 
 That foundation creates the only credible path to the larger ambition. Once it passes, climb the model ladder one rung at a time and require every additional layer to demonstrate what it learned that the simpler model could not.
+
+---
+
+# 44. Appended product capabilities and example scenarios
+
+**Added:** 2026-08-31. **Status:** future backlog, not active implementation.
+
+These seven additions and refinements extend CourtGraph after the existing backlog. They do not replace features, reorder the roadmap, or change the current milestone. Where an idea already appears in the blueprint, the entry below makes its product behavior concrete rather than creating a duplicate project. The earlier lineup, individual-impact, injury/rotation, and market-research ideas remain recorded in [product backlog issue #8](https://github.com/tuckerbullock/courtgraph/issues/8).
+
+## 44.1 Player roles beyond listed positions
+
+**Example:** Two players share a listed position; show which provides creation, spacing, rim pressure, passing, rebounding, or particular defensive functions.
+
+- **Inputs:** permitted, dated measurements of skills, opportunities, and tendencies, with relevant lineup context.
+- **Output:** a profile that allows multiple roles per player, plus supported explanations of role overlap and complementarity within a lineup.
+- **Insufficient evidence:** omit unsupported traits or label them unknown. An embedding or a listed position alone does not establish a basketball role.
+
+Refines §21.5 (role modeling), §22.6 (complementarity), and §30.4 (Player Explorer).
+
+## 44.2 Player portability
+
+**Example:** Compare how a candidate's predicted contribution varies across different teammate combinations and systems.
+
+- **Inputs:** dated player estimates and supported alternative five-player lineups, with explicit replacement references and comparable opponent/context assumptions.
+- **Output:** the level and variation of predicted contribution, contexts where it is stronger or weaker, and coverage/uncertainty. Consistently low predicted value must not be mistaken for excellent portability.
+- **Insufficient evidence:** flag unfamiliar teammates, systems, or roles; do not claim an observed association will transfer to every team.
+
+Refines §22.4–§22.5 (portability and dependency) and §30.4 (Player Explorer).
+
+## 44.3 Full-game rotation planning
+
+**Example:** Compare playing two stars together with staggering their minutes, including the resulting bench units.
+
+- **Inputs:** a dated eligible roster, player availability assumptions, minute limits, rest constraints, opponent scenarios, and supported lineup estimates.
+- **Output:** feasible rotation alternatives with time on court, offense/defense estimates, and uncertainty. In regulation, account for 48 minutes of five-player units and 240 player-minutes; handle overtime separately.
+- **Insufficient evidence:** identify infeasible constraints and weakly supported combinations. Keep a suggested rotation separate from a forecast of what the coach will actually do.
+
+Extends §30.9 (Team Fit Lab). Minute-allocation optimization remains future scope under the research contract.
+
+## 44.4 Opponent counter-lineups
+
+**Example:** Generate alternatives against an opponent's likely small or large units and show how the preferred five changes.
+
+- **Inputs:** eligible player pools, opponent lineups or a declared distribution of likely units, and information available at the prediction cutoff.
+- **Output:** several lineup alternatives, with talent/interaction/context decomposition and matchup-specific trade-offs. Compare candidates under the same opponent assumptions before changing the scenario.
+- **Insufficient evidence:** show sparse or unseen matchups and sensitivity to opponent uncertainty. Do not use the opponent's eventual rotation as though it were known beforehand or promise how its coach will respond.
+
+Extends §15.2 (cross-team matchups) and §30.6 (Lineup Builder).
+
+## 44.5 What would change this answer?
+
+**Example:** Show whether a preferred lineup remains attractive if a player receives six fewer minutes, or a future estimated market advantage disappears at a slower pace.
+
+- **Inputs:** a saved scenario, explicit assumptions, and defensible ranges for minutes, availability, pace, opponent, and player estimates.
+- **Output:** the assumptions that move the result most, ranges where the ranking changes, and alternatives that remain useful across scenarios.
+- **Insufficient evidence:** distinguish user-selected sensitivity ranges from calibrated probability intervals. Report when the apparent advantage is smaller than model or input uncertainty.
+
+Extends §23 (uncertainty), §26 (sensitivity), and §29.5 (lineup explanations). Any market application remains outside cycle 1.
+
+## 44.6 Prediction history and error breakdown
+
+**Example:** Reopen a forecast exactly as it existed before a game, then inspect where predicted minutes, pace, scoring, and individual production differed from observed outcomes.
+
+- **Inputs:** the original prediction timestamp, model version, information cutoff, assumptions, and later permitted observations with their provenance.
+- **Output:** immutable forecast history and separate component-level error summaries, preserving unsuccessful predictions as well as successful ones.
+- **Insufficient evidence:** mark missing or revised outcomes. Component errors can overlap; do not claim a unique causal explanation for a miss without evidence. Realized minutes may support a labeled after-the-fact diagnostic, never silently replace the original forecast inputs.
+
+Extends §24 (evaluation), §27.3 (feature timestamps), and §34 (reproducibility). Component reporting becomes available only as the relevant forecasting models exist.
+
+## 44.7 Evidence-based similar-player search
+
+**Example:** Replace an absent player with someone who preserves a needed lineup function, rather than merely matching scoring averages.
+
+- **Inputs:** a selected player or role need, permitted dated skill measurements, an eligible candidate pool, and the remaining lineup/opponent context.
+- **Output:** separate views for closest functional replacement, best predicted overall replacement, and better-supported choices; explain what each candidate preserves or changes.
+- **Insufficient evidence:** label missing traits and unseen contexts. Similarity does not imply complementarity, equal talent, or equal predicted team value.
+
+Refines §22.7 (replacement preservation), §30.4 (functional neighbors), and §30.8 (Replacement Finder).
+
+## 44.8 Example scenarios to define before coding
+
+Create a small, fixed development challenge set. Each case records its input cutoff, required inputs, expected output type, and insufficient-evidence behavior; it does not prescribe a winning player or a favorable numeric result.
+
+| Scenario | Behavior to specify |
+|---|---|
+| Missing lead guard | Show replacement minutes and creation responsibilities, with supporting evidence or explicit unknowns. |
+| Missing defensive center | Separate offensive and defensive implications and compare supported functional replacements. |
+| Returning player with a minutes restriction | Respect the cap across the full rotation and show sensitivity to alternative available minutes. |
+| Unfamiliar rookie | Expose limited individual/interaction support; use the permitted fallback or abstain instead of inventing chemistry. |
+| Two high-usage stars | Compare shared and staggered minutes, including bench consequences and uncertainty about roles. |
+| Completely unseen lineup | Show novelty/support flags, compare alternatives under a common opponent/context, then inspect changes across opponent scenarios. |
+
+Use synthetic or clearly labeled hypothetical examples until suitable data permissions and model support exist. Select any historical cases before inspecting model results. These development examples support product design and later checks; they are not an untouched evaluation set and cannot establish real-world predictive value.
+
+**Boundaries:** The existing research contract and data-source restrictions remain unchanged. This appendix authorizes no implementation, downloads, paid services, redistribution, deployment, wagers, agent dispatch, or monitoring. Research cycle 1 is not expanded; future capabilities require their applicable evidence and scope gates. Monitoring remains disabled.
