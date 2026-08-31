@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CourtGraph · Local lab</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script></head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="sidebar">
+  <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">⊕</span> CourtGraph<span class="version">LAB / 01</span></a>
+  <p class="nav-label">YOUR WORKSPACE</p>
+  <nav aria-label="Workspace"><button id="nav-real" class="nav-button active" aria-current="page"><span aria-hidden="true">▤</span> Game explorer</button><button id="nav-synthetic" class="nav-button"><span aria-hidden="true">◇</span> Lineup sandbox</button></nav>
+  <div class="sidebar-note"><span class="status-dot"></span> Running on your computer<p>No uploads. No live feeds.<br>Research in progress.</p></div>
+</aside>
+<div class="workspace">
+  <header class="topbar"><span>COURTGRAPH <span class="slash">/</span> <span id="breadcrumb">Game explorer</span></span><span class="local-badge">LOCAL WORKSPACE</span></header>
+  <main id="main" tabindex="-1">
+    <div id="global-error" class="notice error" role="alert" hidden></div>
+    <div id="loading" class="empty"><span class="eyebrow">OPENING THE LAB</span><h1>Loading CourtGraph…</h1></div>
+    <section id="real-view" hidden aria-labelledby="real-title">
+      <div class="hero"><div><span class="eyebrow">01 / OBSERVATIONAL EXPLORER</span><h1 id="real-title">The game, five at a time.</h1><p>Explore the lineups that actually played. Keep the evidence in view.</p></div><span class="mode-pill">OBSERVED DATA</span></div>
+      <div id="real-empty" class="empty" hidden><h2>No game data loaded yet.</h2><p>The synthetic sandbox is ready. To explore saved games, restart with an existing ingest output:</p><code>courtgraph app --ingest-dir PATH/TO/OUTPUT --names PATH/TO/display_names.json</code><p>Nothing is downloaded automatically. Source names are optional.</p><button id="empty-sandbox" class="primary">Open synthetic sandbox →</button></div>
+      <div id="real-content" hidden>
+        <div class="notice"><strong>Observations, not predictions.</strong> These are raw results from accepted possessions, not adjusted player impact or chemistry. A small sample cannot establish lineup quality.</div><div id="coverage-summary" class="coverage-summary" aria-live="polite"></div>
+        <div class="filterbar">
+          <label>Game<select id="game-filter"><option value="">All loaded games</option></select></label>
+          <label>Offensive team<select id="team-filter"><option value="">All teams</option></select></label>
+          <label>Player in lineup<select id="player-filter"><option value="">Any player</option></select></label>
+          <label>Minimum possessions<input id="minimum-filter" type="number" min="1" max="1000000" value="1"></label>
+          <button id="reset-filters" class="quiet">Reset</button>
+        </div>
+        <div class="metrics" id="real-metrics" aria-live="polite"></div>
+        <div class="analysis-grid">
+          <section class="panel lineup-panel"><div class="panel-heading"><div><h2>Observed offensive lineups</h2><p id="lineup-count"></p></div><label class="sort-label">Sort by<select id="sort-lineups"><option value="possessions">Possessions</option><option value="rating">Points / 100</option></select></label></div><div class="table-scroll"><table><thead><tr><th>Five-player lineup</th><th>Poss.</th><th>Points / 100</th><th></th></tr></thead><tbody id="lineup-rows"></tbody></table></div><p class="footnote">Rates use summed points ÷ summed possessions × 100, with no garbage-time weighting. Minimum possessions filters rows, not the totals above.</p></section>
+          <aside class="panel evidence-panel" aria-label="Lineup evidence"><span class="eyebrow">BEHIND THE NUMBER</span><div id="lineup-detail"><h2>Inspect a lineup</h2><p>Select a row to see its sample, opponents, and limitations.</p></div></aside>
+        </div>
+        <section class="panel quality-panel"><div class="panel-heading"><div><h2>Games not used</h2><p>Every failed or incomplete archive game and the recorded reason.</p></div><span class="small-tag">NO SILENT DROPS</span></div><div id="quality-games" class="quality-games"></div><details class="provenance"><summary>Source & provenance</summary><dl id="provenance"></dl></details></section>
+      </div>
+    </section>
+    <section id="synthetic-view" hidden aria-labelledby="synthetic-title">
+      <div class="hero"><div><span class="eyebrow">02 / SYNTHETIC LINEUP SANDBOX</span><h1 id="synthetic-title">Change the five. See the fit.</h1><p>A working model of talent, interaction, and context—with fictional players.</p></div><span class="mode-pill synthetic-pill">SYNTHETIC ONLY</span></div>
+      <div class="notice synthetic-notice"><strong>No NBA predictions here.</strong> This model learns from generated data. Player IDs, dates, and all estimates in this mode are synthetic.</div>
+      <form id="comparison-form">
+        <div class="builder-grid">
+          <section class="panel builder"><div class="panel-heading"><div><span class="eyebrow">LINEUP A</span><h2>Your starting five</h2></div><span class="letter">A</span></div><div id="offense-selects" class="player-selects"></div></section>
+          <section class="panel builder"><div class="panel-heading"><div><span class="eyebrow">LINEUP B</span><h2>Try a different fit</h2></div><span class="letter alternative">B</span></div><div id="alternative-selects" class="player-selects"></div><button id="copy-a" type="button" class="quiet">Copy lineup A → B</button></section>
+          <section class="panel opponent"><span class="eyebrow">SHARED CONDITIONS</span><h2>Same opponent.</h2><p>Both lineups face these five players.</p><div id="defense-selects" class="player-selects compact"></div><div class="context-fields"><label class="check"><input id="home-context" type="checkbox" checked> Offense plays at home</label><label class="check"><input id="playoff-context" type="checkbox"> Playoff context</label><label>Rest days<input id="rest-context" type="number" min="0" max="7" value="1"></label><p class="footnote">Period 2 · tied score · latest synthetic season · full garbage-time weight.</p></div></section>
+        </div>
+        <div class="actions"><p>Talent + interaction surplus + context = predicted offensive value.</p><button id="reset-lineups" type="button" class="quiet">Reset lineups</button><button id="compare-button" class="primary" type="submit">Compare lineups →</button></div>
+      </form>
+      <div id="compare-error" class="notice error" role="alert" hidden></div>
+      <section id="comparison-results" class="panel comparison-panel" aria-live="polite"></section>
+      <details class="panel model-evidence"><summary>About this synthetic model & uncertainty</summary><div id="model-evidence"></div></details>
+    </section>
+    <footer><span>CourtGraph / a local basketball research lab</span><span>Observed facts ≠ model estimates ≠ proven causation</span></footer>
+  </main>
+</div>
+</body></html>

@@ -23,6 +23,9 @@ class GameManifest:
     game_date: str
     season: str
     season_index: int
+    season_type: str
+    home_team_id: int
+    away_team_id: int
     status: str  # "accepted" | "quarantined"
     quarantine_reason: str
     reconstructed_possessions: int
@@ -41,6 +44,9 @@ class GameManifest:
             "game_date": self.game_date,
             "season": self.season,
             "season_index": self.season_index,
+            "season_type": self.season_type,
+            "home_team_id": self.home_team_id,
+            "away_team_id": self.away_team_id,
             "status": self.status,
             "quarantine_reason": self.quarantine_reason,
             "reconstructed_possessions": self.reconstructed_possessions,
