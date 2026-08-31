@@ -90,6 +90,7 @@ class GameMetadata:
     days_rest: dict[int, int]  # team_id -> whole days of rest (>= 0)
     final_score: dict[int, int]  # team_id -> official final points
     period_scores: dict[int, list[int]]  # team_id -> official points by period
+    reconciliation_source: str = ""  # provenance of final_score / period_scores
 
     @property
     def playoff(self) -> bool:
@@ -133,6 +134,7 @@ class Snapshot:
     games: tuple[SnapshotGame, ...]
     override_files: tuple[Path, ...] = field(default_factory=tuple)
     override_hashes: dict[str, str] = field(default_factory=dict)  # rel path -> sha256
+    source_provenance: dict[str, Any] = field(default_factory=dict)  # provenance.json
 
     def __iter__(self) -> Iterator[SnapshotGame]:
         return iter(self.games)
@@ -197,6 +199,7 @@ def _read_metadata(entry: dict[str, Any]) -> GameMetadata:
         days_rest=days_rest,
         final_score=final_score,
         period_scores=period_scores,
+        reconciliation_source=str(recon.get("source") or ""),
     )
 
 
@@ -239,6 +242,17 @@ def load_snapshot(snapshot_dir: str | Path) -> Snapshot:
         else ()
     )
     override_hashes = {str(p.relative_to(root)): sha256_file(p) for p in override_files}
+
+    # Optional provenance sidecar (written by `snapshot-from-shufinskiy`).
+    provenance_path = root / "provenance.json"
+    source_provenance: dict[str, Any] = {}
+    if provenance_path.is_file():
+        try:
+            loaded = json.loads(provenance_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise SnapshotError(f"{provenance_path}: invalid JSON ({exc})") from exc
+        if isinstance(loaded, dict):
+            source_provenance = loaded
 
     games: list[SnapshotGame] = []
     seen: set[str] = set()
@@ -287,6 +301,7 @@ def load_snapshot(snapshot_dir: str | Path) -> Snapshot:
         games=tuple(games),
         override_files=override_files,
         override_hashes=override_hashes,
+        source_provenance=source_provenance,
     )
 
 
