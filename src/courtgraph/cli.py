@@ -108,7 +108,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="emit a game whose derived final score != the official total "
         "(flagged in the manifest) instead of quarantining it",
     )
+    ingest.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="also write a readable self-contained HTML report to this path",
+    )
     ingest.add_argument("--json", action="store_true", help="print result as JSON")
+
+    shuf = subparsers.add_parser(
+        "snapshot-from-shufinskiy",
+        help="build a stats_nba_pbpstats/v1 snapshot for named games from a "
+        "local SRC-SHUFINSKIY playoffs archive (local-dev-only; no network)",
+    )
+    shuf.add_argument(
+        "--archive-dir",
+        type=Path,
+        required=True,
+        help="directory holding nbastats_po_2024.csv / datanba_po_2024.csv / "
+        "shotdetail_po_2024.csv",
+    )
+    shuf.add_argument(
+        "--game",
+        action="append",
+        required=True,
+        metavar="GAME_ID",
+        help="NBA game id (8- or 10-digit), repeatable",
+    )
+    shuf.add_argument(
+        "--out-dir", type=Path, required=True, help="snapshot directory to create"
+    )
+    shuf.add_argument("--json", action="store_true", help="print result as JSON")
 
     predict = subparsers.add_parser(
         "predict", help="decompose one lineup's predicted value with a fitted model"
@@ -296,6 +326,14 @@ def _cmd_ingest(args: argparse.Namespace, stream: TextIO) -> int:
         print(f"ingest: invalid snapshot: {exc}", file=stream)
         return 2
 
+    report_path = None
+    if args.report is not None:
+        from courtgraph.ingest.report import write_report
+
+        report_path = write_report(
+            result.out_dir, args.report, snapshot_dir=args.snapshot_dir
+        )
+
     if args.json:
         print(
             json.dumps(
@@ -307,6 +345,7 @@ def _cmd_ingest(args: argparse.Namespace, stream: TextIO) -> int:
                     "games_accepted": result.games_accepted,
                     "games_quarantined": result.games_quarantined,
                     "possessions_excluded": result.possessions_excluded,
+                    "report_path": str(report_path) if report_path else None,
                 },
                 indent=2,
                 sort_keys=True,
@@ -324,7 +363,40 @@ def _cmd_ingest(args: argparse.Namespace, stream: TextIO) -> int:
         print(f"stints:     {result.stints_path}", file=stream)
         print(f"quarantine: {result.quarantine_path}", file=stream)
         print(f"manifest:   {result.manifest_path}", file=stream)
+        if report_path:
+            print(f"report:     {report_path}", file=stream)
     return 0 if result.stints_written > 0 else 1
+
+
+def _cmd_snapshot_from_shufinskiy(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.ingest.shufinskiy import ShufinskiyArchiveError, build_snapshot
+
+    try:
+        snap = build_snapshot(args.archive_dir, list(args.game), args.out_dir)
+    except (ShufinskiyArchiveError, FileNotFoundError) as exc:
+        print(f"snapshot-from-shufinskiy: {exc}", file=stream)
+        return 2
+
+    payload = {
+        "out_dir": str(snap.out_dir),
+        "game_ids": list(snap.game_ids),
+        "quarantine_expected": snap.quarantine_expected,
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True), file=stream)
+    else:
+        print(
+            f"snapshot-from-shufinskiy: wrote {len(snap.game_ids)} game(s) to "
+            f"{snap.out_dir}  (local SRC-SHUFINSKIY archive; no network)",
+            file=stream,
+        )
+        for gid in snap.game_ids:
+            note = snap.quarantine_expected.get(gid)
+            print(
+                f"  {gid}" + (f"  — will quarantine: {note}" if note else ""),
+                file=stream,
+            )
+    return 0
 
 
 def _cmd_predict(args: argparse.Namespace, stream: TextIO) -> int:
@@ -371,6 +443,7 @@ _COMMANDS = {
     "doctor": _cmd_doctor,
     "demo": _cmd_demo,
     "ingest": _cmd_ingest,
+    "snapshot-from-shufinskiy": _cmd_snapshot_from_shufinskiy,
     "fit": _cmd_fit,
     "predict": _cmd_predict,
 }

@@ -108,6 +108,15 @@ documented in `src/courtgraph/ingest/snapshot.py`. Real snapshots, working
 copies, derived stint rows, and manifests are gitignored (`DATA_SOURCES.md`
 §1/§5.1); only hand-authored fixtures under `tests/` are committed.
 
+`--report PATH` also writes one self-contained HTML report (teams, lineups,
+score check, exclusions). For a local demonstration on real playoff games,
+`courtgraph snapshot-from-shufinskiy --archive-dir DIR --game GID … --out-dir
+DIR` builds a snapshot from a local `SRC-SHUFINSKIY` archive (the
+`DATA_SOURCES.md` §1 local-dev-only fallback; no network). Its score check
+compares reconstructed stats.nba.com possessions against the data.nba.com
+lineage — a second NBA surface, not an independent provider — and a handful of
+games is not evidence of predictive accuracy.
+
 ## Runtime dependency
 
 The one runtime dependency is `numpy` (pinned exactly in `pyproject.toml` and
