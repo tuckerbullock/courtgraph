@@ -118,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     shuf = subparsers.add_parser(
         "snapshot-from-shufinskiy",
-        help="build a stats_nba_pbpstats/v1 snapshot for named games from a "
+        help="build a stats_nba_pbpstats/v1 snapshot from games in a "
         "local SRC-SHUFINSKIY playoffs archive (local-dev-only; no network)",
     )
     shuf.add_argument(
@@ -128,17 +128,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="directory holding nbastats_po_2024.csv / datanba_po_2024.csv / "
         "shotdetail_po_2024.csv",
     )
-    shuf.add_argument(
+    shuf_selection = shuf.add_mutually_exclusive_group(required=True)
+    shuf_selection.add_argument(
         "--game",
         action="append",
-        required=True,
         metavar="GAME_ID",
         help="NBA game id (8- or 10-digit), repeatable",
+    )
+    shuf_selection.add_argument(
+        "--all-games",
+        action="store_true",
+        help="include every game present in all three local archive inputs",
     )
     shuf.add_argument(
         "--out-dir", type=Path, required=True, help="snapshot directory to create"
     )
     shuf.add_argument("--json", action="store_true", help="print result as JSON")
+
+    app = subparsers.add_parser(
+        "app", help="open a local browser explorer and synthetic sandbox"
+    )
+    app.add_argument(
+        "--port", type=int, default=8765, help="loopback port (default: 8765)"
+    )
+    app.add_argument(
+        "--ingest-dir",
+        type=Path,
+        help="existing output with manifest.json and stints.jsonl",
+    )
+    app.add_argument(
+        "--names", type=Path, help="optional display_names.json for that snapshot"
+    )
 
     predict = subparsers.add_parser(
         "predict", help="decompose one lineup's predicted value with a fitted model"
@@ -378,7 +398,9 @@ def _cmd_snapshot_from_shufinskiy(args: argparse.Namespace, stream: TextIO) -> i
     from courtgraph.ingest.shufinskiy import ShufinskiyArchiveError, build_snapshot
 
     try:
-        snap = build_snapshot(args.archive_dir, list(args.game), args.out_dir)
+        snap = build_snapshot(
+            args.archive_dir, None if args.all_games else list(args.game), args.out_dir
+        )
     except (ShufinskiyArchiveError, OutputPathError, FileNotFoundError) as exc:
         print(f"snapshot-from-shufinskiy: {exc}", file=stream)
         return 2
@@ -388,12 +410,14 @@ def _cmd_snapshot_from_shufinskiy(args: argparse.Namespace, stream: TextIO) -> i
         "provenance": snap.provenance,
         "game_ids": list(snap.game_ids),
         "quarantine_expected": snap.quarantine_expected,
+        "archive_coverage": snap.archive_coverage,
     }
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True), file=stream)
     else:
         print(
-            f"snapshot-from-shufinskiy: wrote {len(snap.game_ids)} game(s) to "
+            f"snapshot-from-shufinskiy: wrote {len(snap.game_ids)} of "
+            f"{snap.archive_coverage['archive_games']} archive game(s) to "
             f"{snap.out_dir}  (local SRC-SHUFINSKIY archive; no network)",
             file=stream,
         )
@@ -446,7 +470,14 @@ def _cmd_predict(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_app(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.app.server import serve
+
+    return serve(args.port, args.ingest_dir, args.names, stream)
+
+
 _COMMANDS = {
+    "app": _cmd_app,
     "doctor": _cmd_doctor,
     "demo": _cmd_demo,
     "ingest": _cmd_ingest,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import subprocess
 import sys
@@ -174,6 +175,30 @@ class ShufinskiyConverterTests(unittest.TestCase):
         names = json.loads((self.snap.out_dir / "display_names.json").read_text())
         self.assertIn(str(HOME_TEAM), names["teams"])
         self.assertTrue(names["players"])
+
+    def test_all_games_uses_complete_archive_intersection_and_records_gap(self) -> None:
+        datanba = self.archive / "datanba_po_2024.csv"
+        with datanba.open() as stream:
+            rows = list(csv.DictReader(stream))
+        # Rewrite with the original header while removing one game's feed rows.
+        with datanba.open() as stream:
+            reader = csv.DictReader(stream)
+            fieldnames = list(reader.fieldnames or [])
+        kept = [row for row in rows if row["GAME_ID"].zfill(10) != "0042400083"]
+        with datanba.open("w", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(kept)
+        with tempfile.TemporaryDirectory() as directory:
+            snap = build_snapshot(self.archive, None, Path(directory) / "all")
+            self.assertEqual(snap.game_ids, ("0042400081", "0042400082"))
+            self.assertEqual(snap.archive_coverage["archive_games"], 3)
+            self.assertEqual(snap.archive_coverage["complete_games"], 2)
+            excluded = snap.archive_coverage["excluded_games"]
+            self.assertEqual(excluded[0]["game_id"], "0042400083")
+            self.assertEqual(excluded[0]["missing_inputs"], ["datanba_po_2024.csv"])
+            provenance = json.loads((snap.out_dir / "provenance.json").read_text())
+            self.assertEqual(provenance["archive_coverage"], snap.archive_coverage)
 
     def test_unknown_game_is_a_clear_error(self) -> None:
         with (

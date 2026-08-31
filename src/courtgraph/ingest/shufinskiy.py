@@ -295,11 +295,12 @@ class ShufinskiySnapshot:
     game_ids: tuple[str, ...]
     provenance: dict[str, Any]
     quarantine_expected: dict[str, str]
+    archive_coverage: dict[str, Any]
 
 
 def build_snapshot(
     archive_dir: str | Path,
-    game_ids: list[str],
+    game_ids: list[str] | None,
     out_dir: str | Path,
 ) -> ShufinskiySnapshot:
     archive = Path(archive_dir)
@@ -344,10 +345,51 @@ def build_snapshot(
         if date is not None and len(teams) == 2:
             schedule[gid] = (date, teams)
 
-    requested = [_pad_game_id(g) for g in game_ids]
+    available = {
+        "nbastats_po_2024.csv": set(pbp_by_game),
+        "datanba_po_2024.csv": set(datanba_by_game),
+        "shotdetail_po_2024.csv": set(shots_by_game),
+    }
+    archive_games = set().union(*available.values())
+    complete_games = set.intersection(*available.values())
+    excluded_games = []
+    for gid in sorted(archive_games - complete_games):
+        rows = shots_by_game.get(gid, [])
+        excluded_games.append(
+            {
+                "game_id": gid,
+                "game_date": _game_date_from_shots(rows) or "",
+                "team_ids": sorted(
+                    {
+                        int(row["TEAM_ID"])
+                        for row in rows
+                        if (row.get("TEAM_ID") or "").strip()
+                    }
+                ),
+                "missing_inputs": sorted(
+                    name for name, games in available.items() if gid not in games
+                ),
+            }
+        )
+    archive_coverage = {
+        "archive_games": len(archive_games),
+        "complete_games": len(complete_games),
+        "games_by_input": {name: len(games) for name, games in available.items()},
+        "excluded_games": excluded_games,
+        "selection": "all complete games" if game_ids is None else "explicit game ids",
+    }
+    provenance = {**provenance, "archive_coverage": archive_coverage}
+    requested = (
+        sorted(complete_games)
+        if game_ids is None
+        else [_pad_game_id(g) for g in game_ids]
+    )
     games_meta: list[dict[str, Any]] = []
     names: dict[str, dict[str, str]] = {"teams": {}, "players": {}}
     quarantine_expected: dict[str, str] = {}
+    if game_ids is None:
+        for rows in pbp_by_game.values():
+            _collect_names(names, rows)
 
     for gid in requested:
         if gid not in pbp_by_game:
@@ -419,6 +461,7 @@ def build_snapshot(
         game_ids=tuple(requested),
         provenance=provenance,
         quarantine_expected=quarantine_expected,
+        archive_coverage=archive_coverage,
     )
 
 

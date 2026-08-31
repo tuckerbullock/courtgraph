@@ -110,14 +110,74 @@ copies, derived stint rows, and manifests are gitignored (`DATA_SOURCES.md`
 
 `--report PATH` also writes one self-contained HTML report (teams, lineups,
 score check, exclusions). For a local demonstration on real playoff games,
-`courtgraph snapshot-from-shufinskiy --archive-dir DIR --game GID … --out-dir
-DIR` builds a snapshot from a local `SRC-SHUFINSKIY` archive (the
-`DATA_SOURCES.md` §1 local-dev-only fallback; no network), records the consumed
+`courtgraph snapshot-from-shufinskiy --archive-dir DIR --all-games --out-dir
+DIR` builds every game that has the three required inputs in a local
+`SRC-SHUFINSKIY` archive. Use repeatable `--game GID` instead for a selected
+batch. This is the `DATA_SOURCES.md` §1 local-dev-only fallback; no network is
+used. The converter records the consumed
 CSV hashes and pinned source commit in `provenance.json`, and gitignores its
 whole output. Its score check uses an operator `official_totals.json` when
 present, otherwise the data.nba.com game feed (labelled per game) — a second
-NBA surface, not an independent provider; a handful of games is not evidence of
+NBA surface, not an independent provider. One postseason is not evidence of
 predictive accuracy.
+
+## Local browser app (`courtgraph app`)
+
+Run a private app on your computer using the existing Python environment:
+
+```bash
+uv run courtgraph app
+# Open http://127.0.0.1:8765. Ctrl+C stops the server.
+```
+
+The **Lineup sandbox** trains a small deterministic model in memory from
+synthetic data. Build two five-player lineups, choose a shared opposing five
+and context, and compare offensive value, additive talent, interaction
+surplus, support, and approximate interaction uncertainty. These are fictional
+players, not NBA predictions. Startup fits the model once; it does not download
+or save data.
+
+To enable the **Game explorer**, point it at an existing ingest output:
+
+```bash
+uv run courtgraph app --ingest-dir path/to/ingest_out \
+    --names path/to/snapshot/display_names.json
+```
+
+The current local 2025 playoff archive can be rebuilt and opened with:
+
+```bash
+uv run courtgraph snapshot-from-shufinskiy \
+    --archive-dir data/nba_snapshots/_shufinskiy_src --all-games \
+    --out-dir data/nba_snapshots/all_2025_playoffs/snap
+uv run courtgraph ingest \
+    --snapshot-dir data/nba_snapshots/all_2025_playoffs/snap \
+    --out-dir data/nba_snapshots/all_2025_playoffs/out
+uv run courtgraph app \
+    --ingest-dir data/nba_snapshots/all_2025_playoffs/out \
+    --names data/nba_snapshots/all_2025_playoffs/snap/display_names.json
+```
+
+That local archive has 84 games: 83 have all three required source inputs, 62
+currently pass reconstruction, 21 are quarantined with recorded reasons, and
+one lacks a required source feed. The explorer shows all 84 in its coverage and
+game controls rather than silently hiding failed or incomplete games.
+
+`--names` is optional. The explorer checks the stint checksum and game exposure
+against the manifest before loading. Filter by game, offensive team, player,
+and minimum possessions; inspect observed lineup scoring, sample sizes,
+source provenance, score reconciliation, and quarantined games. Rates are
+**raw offensive points per 100 accepted possessions**, with no garbage-time
+weighting, adjustment, or chemistry prediction. The minimum-sample filter
+changes displayed lineup rows, not the selection totals. Loaded participants
+are not a complete team roster.
+
+The server binds only to `127.0.0.1`; `--port` defaults to 8765 (use another port
+if occupied). It serves only its bundled assets and these explicitly loaded
+records, rejects foreign origins/hosts, and offers no file browsing or uploads.
+No accounts, external assets, telemetry, NBA model training, or betting tools.
+Real-data and synthetic calculation paths remain separate. This is a local
+research app, not a production web server or evidence of predictive accuracy.
 
 ## Runtime dependency
 
@@ -169,13 +229,13 @@ The project will treat chemistry as a model-dependent predictive quantity, not a
 
 ## Next milestone
 
-The synthetic vertical slice runs end to end, and `courtgraph ingest` provides
-a fixture-tested offline adapter from stored `stats.nba.com` snapshots into the
-same stint format. The next step is to obtain a permitted real snapshot
-(`DATA_SOURCES.md` §8), run it through `ingest`, and re-run the same splits,
-models, and evaluation on real data. Real-data validation (multi-game
-reconciliation, an independent parser, the six-part evidence bar) is still
-pending.
+The local browser app now connects the 2025 playoff observational explorer and
+the separate synthetic lineup sandbox. The next scientific milestone remains
+full-season, multi-season permitted data validation and a chronological
+real-NBA baseline comparison. The local explorer does not establish real-NBA
+predictive accuracy;
+independent-parser, minute reconciliation, and the full evidence gates remain
+pending. Additional product ideas remain in the backlog, not active work.
 
 ## License
 

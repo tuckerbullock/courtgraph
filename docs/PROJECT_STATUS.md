@@ -1,17 +1,34 @@
 # Project Status
 
-Last updated: 2026-08-31 (offline NBA snapshot -> stint importer)
+Last updated: 2026-08-31 (full local playoff archive in browser app)
 
 ## Current phase
 
-Vertical-slice prototype — one full path through the product on **synthetic**
-data (model ladder rungs 0/2 and 5/6 of `RESEARCH_CONTRACT.md` §11), with
-leakage-safe evaluation, plus a fixture-tested **offline importer**
-(`courtgraph ingest`) from stored `stats.nba.com` snapshots into the same stint
-format. No real snapshot has been ingested yet; real-data validation is
-pending.
+Local browser prototype: `courtgraph app` provides an observational game
+explorer and a separate synthetic lineup sandbox. The explorer now uses the
+complete local 2025 playoff archive: 84 games found, 83 attempted, 62 accepted,
+21 quarantined, and one missing a required feed. This is broader observational
+coverage, not a fitted or validated real-NBA model. Full-season and multi-season
+validation remain pending. No demonstrated betting edge exists.
 
 ## Completed
+
+- Local browser app (`src/courtgraph/app/`, `courtgraph app`), with no new
+  dependencies: explicit read-only ingest inputs, verified stint checksum and
+  per-game exposure, game/team/player/sample filters, observed lineup rates,
+  evidence and quarantine panels, and source provenance.
+- Separate deterministic synthetic model and A/B five-player builder, shared
+  opposing lineup/context, talent + interaction + context decomposition,
+  individual training support, and approximate interaction intervals.
+- Loopback-only HTTP server with fixed asset routes, origin/host checks,
+  bounded requests, and no filesystem browsing, uploads, or external assets.
+- App tests cover weighted aggregation, input immutability, data/manifest
+  mismatches, lineup validation, model parity, a non-zero sandbox interaction
+  surplus, empty states, and HTTP boundaries. Automated verification is recorded
+  in `docs/CURRENT_TASK.md`.
+- Whole-archive local ingestion with explicit coverage accounting. The current
+  archive produces 3,325 stints and 10,852 accepted possessions across 62 games;
+  the UI exposes all 22 failed/incomplete games and their recorded reason.
 
 - Defined the north-star research question.
 - Created the full research, modeling, evaluation, engineering, and publication blueprint.
@@ -48,11 +65,11 @@ pending.
 
 ## Not started
 
-- **Real NBA data acquisition** and a real snapshot run through `courtgraph ingest` (`DATA_SOURCES.md` §8); real-data validation is pending.
+- Full-season and multi-season permitted data ingestion and real-NBA model validation; the local 2025 playoff archive is loaded.
 - The contract's independent-parser gate and multi-game reconciliation gate; minute/lineup-minute reconciliation.
 - Model-ladder rungs 1, 3, 4, and 7; calibrated Bayesian uncertainty.
 - Transaction backtest (T4); the contract's full six-part evidence bar.
-- Dashboard or API implementation.
+- Real-NBA predictive lineup recommendations, dated complete-roster generation, and the broader product backlog. The local observational/synthetic app is implemented.
 
 ## Current verification
 
@@ -82,6 +99,13 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
+The current implementation passes 155 unit tests, Ruff, mypy over 45 source
+files, and JavaScript syntax validation. The full-archive pipeline was run end
+to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
+--ingest-dir`): 84 games found, 83 with all three inputs, 62 accepted, 21
+quarantined, one missing a feed; the app's `/api/state` reports matching
+coverage. A manual look at the rendered coverage screen is still worthwhile.
+
 On the default synthetic dataset (17k stints, deterministic) the low-rank model
 beats the additive baseline on macro held-out lineup value (vs the known truth)
 by roughly 25–30% on the unseen-lineup and unseen-pair holdouts and by ~0% on
@@ -91,10 +115,11 @@ no-signal control produces no improvement.
 
 ## Next verifiable outcome
 
-Replace `synthetic.py` with a real NBA possession/stint source (`DATA_SOURCES.md`
-§8) emitted in the `courtgraph.chemistry.stints` format, then re-run the same
-splits, baseline, model, and evaluation on real data and compare to the
-contract's rung-2/3 reference baselines.
+Extend permitted real-NBA inputs to full seasons and multiple seasons, improve
+reconstruction coverage for the 21 quarantined playoff games, then run
+chronological baseline comparisons and the contract evidence gates. Preserve the synthetic
+generator as a separate control; do not replace it or present its estimates
+as NBA forecasts.
 
 ## Governing document
 
