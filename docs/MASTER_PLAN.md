@@ -4705,3 +4705,98 @@ Create a small, fixed development challenge set. Each case records its input cut
 Use synthetic or clearly labeled hypothetical examples until suitable data permissions and model support exist. Select any historical cases before inspecting model results. These development examples support product design and later checks; they are not an untouched evaluation set and cannot establish real-world predictive value.
 
 **Boundaries:** The existing research contract and data-source restrictions remain unchanged. This appendix authorizes no implementation, downloads, paid services, redistribution, deployment, wagers, agent dispatch, or monitoring. Research cycle 1 is not expanded; future capabilities require their applicable evidence and scope gates. Monitoring remains disabled.
+
+---
+
+# 45. Player-lift: a player's effect on teammates' individual production
+
+**Added:** 2026-09-01. **Status:** backlog, not active implementation. Appended
+after §44; does not reorder the roadmap or expand research cycle 1.
+
+## 45.1 Why this is a distinct question
+
+Rungs 3–5 tested **symmetric** interaction — a joint `γ_ij` (or `u_i·v_j`)
+attached to a *lineup's* value — and it is **not supported** on real data
+(`docs/INTERACTION_FINDINGS.md`): four leakage-safe evaluation tasks, no gain
+over additive talent, per-pair terms indistinguishable from a placebo.
+
+"Does a good player make teammates better?" is a different estimand:
+**asymmetric** ("giver" vs. "receiver"), **pooled** across all of a player's
+teammates rather than estimated per pair, and — in its strong form — measured
+on a teammate's **individual** production, not the lineup's net rating. A
+lineup-value model cannot separate "no interaction" from "a lift effect that is
+collinear with the giver's own additive talent"; that ambiguity is exactly
+what the null leaves open, and what this item targets.
+
+Note the relationship to rung 5: `lift_i · receptivity_k` is a rank-1
+provision/need term with the receiver side **pinned to observed talent**. Rung
+5's general low-rank form already failed, so Phase A is a lower-variance
+variant of something with a negative prior, and must clear the same evidence
+bar rather than a softer one.
+
+## 45.2 Phase A — pooled lift on lineup value (cheap; likely confirms the null)
+
+Add one EM-shrunk scalar per player, `λ_i ~ N(0, τ_λ²)`, to the rung-3 frame:
+
+```
+μ_s = context + Σ_{i∈off} α_i − Σ_{j∈def} β_j + Σ_{i∈off} λ_i · (A_off,s − α_i)
+```
+
+where `A_off,s = Σ_{i∈off} α_i` is total offensive talent on the floor, so the
+lift term rewards lineups where high-`λ` players share the court with strong
+teammates. Fit by two-stage (freeze `α` from rung 3, regress the residual on
+the `λ_i·(A_off − α_i)` design) or by alternating; `τ_λ` learned as a fourth
+variance component.
+
+- **Evaluation:** the four existing leakage-safe tasks (`compare_rungs`,
+  `transport`), macro RMSE + calibration vs. rung 3, plus a **placebo** —
+  permute the `λ_i → player` assignment (same count, same exposure). Supported
+  only if it beats rung 3 out of sample **and** beats its placebo, with
+  maintained calibration and seed stability (contract §17, §25).
+- **Cost:** ~1 day. Reuses the rung-4 EM and placebo machinery.
+- **Expected:** another null, differently shaped. Recorded either way
+  (§26); a clean null here further constrains where chemistry could hide.
+
+## 45.3 Phase B — direct per-player on-court production model (the real deliverable)
+
+Needs a **data extension**: per-player offensive production per stint (or per
+game, on/off), attributed from the play-by-play already in the snapshots
+(`pbpstats` gives player points; assists and a usage proxy are available). No
+new download — the raw inputs are the same `stats_nba_pbpstats/v1` snapshots.
+
+Model each player-stint's offensive production:
+
+```
+prod_{k,s} = base_k + Σ_{i∈off, i≠k} lift_{i} + context + noise
+```
+
+with `lift_i ~ N(0, τ_lift²)` a **pooled giver effect** — "the average bump a
+teammate's per-possession offense gets when player i is also on the floor,"
+holding the receiver's own level and context fixed. This is a RAPM-style
+design on the player-production outcome rather than the lineup outcome.
+
+- **Output:** a per-player `lift_i` in points/100 with a calibrated interval
+  and an exposure/support flag — a genuine "makes teammates better" number,
+  the first CourtGraph estimate that is not lineup-value.
+- **Leakage-safe holdouts:** unseen giver-receiver pairs; chronological;
+  transaction cohort (a player who changed teams — does `lift_i` predict the
+  new teammates' production shift?). Placebo: shuffle the giver identity.
+- **Guards:** attribution choices (what counts as "production": points only vs.
+  points + assist credit) are a registered research choice stored in config,
+  reported both ways; garbage-time weighting as in the stint pipeline; a
+  player's own production is never a regressor on itself.
+- **Cost:** ~1–2 weeks (the ingest extension dominates).
+
+## 45.4 What "supported" requires
+
+Contract §17's bar, adapted: a positive Phase-B result needs `lift_i` estimates
+that (1) improve out-of-sample teammate-production prediction over a
+receiver-only baseline, (2) beat the giver-shuffle placebo, (3) stay calibrated
+and seed-stable, (4) show a non-trivial transaction-cohort signal (the
+strongest test — the lift moves with the player, not the roster). Anything
+less is "not supported" or "inconclusive," reported as a finding.
+
+**Boundaries:** Same as §44. No new data acquisition beyond attributing
+player production from snapshots already ingested; no schema change without a
+contract amendment; research cycle 1 is not expanded. Product backlog issue #8
+remains the index; this section makes the estimand and evidence bar concrete.

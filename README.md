@@ -25,6 +25,7 @@ Governing documents:
 - [Master research and engineering plan](docs/MASTER_PLAN.md)
 - [Current project status](docs/PROJECT_STATUS.md)
 - [Active-task and agent handoff](docs/CURRENT_TASK.md)
+- [Interaction findings — is lineup chemistry predictively real?](docs/INTERACTION_FINDINGS.md)
 - [Contributing and research-integrity rules](CONTRIBUTING.md)
 - [Shared coding-agent instructions](AGENTS.md)
 
