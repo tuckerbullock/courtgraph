@@ -53,6 +53,7 @@ class RoleClustering:
     centers: FloatArray  # (n_clusters, n_features), standardized
     assignment: dict[tuple[int, str], int]
     player_cluster: dict[int, int]  # collapsed to one role per player
+    player_vector: dict[int, tuple[float, ...]]  # standardized role vector
     seed: int
 
     def cluster_of(self, player_id: int, season: str) -> int:
@@ -66,6 +67,12 @@ class RoleClustering:
         cluster), or ``-1`` if never clustered."""
 
         return self.player_cluster.get(player_id, -1)
+
+    def vector_of(self, player_id: int) -> tuple[float, ...] | None:
+        """The player's standardized role vector (same order as ``features``),
+        or ``None`` if never clustered."""
+
+        return self.player_vector.get(player_id)
 
     def center_profile(self, cluster: int) -> dict[str, float]:
         """The cluster center back in raw (un-standardized) feature units."""
@@ -142,16 +149,19 @@ def fit_role_clusters(
     centers, labels = _kmeans(standardized, n_clusters, seed=seed)
     assignment = {key: int(lbl) for key, lbl in zip(keys, labels, strict=True)}
 
-    # collapse to one role per player: the cluster of their highest-exposure
-    # season (off_possessions), so a stint-level lookup needs only player id.
+    # collapse to one role per player: the cluster / vector of their
+    # highest-exposure season (off_possessions), so a stint-level lookup needs
+    # only player id.
     best_poss: dict[int, int] = {}
     player_cluster: dict[int, int] = {}
+    player_vector: dict[int, tuple[float, ...]] = {}
     poss = {(p.player_id, p.season): p.off_possessions for p in profiles}
-    for (pid, season), lbl in assignment.items():
+    for i, ((pid, season), lbl) in enumerate(zip(keys, labels, strict=True)):
         exposure = poss.get((pid, season), 0)
         if exposure >= best_poss.get(pid, -1):
             best_poss[pid] = exposure
-            player_cluster[pid] = lbl
+            player_cluster[pid] = int(lbl)
+            player_vector[pid] = tuple(float(x) for x in standardized[i])
 
     return RoleClustering(
         features=features,
@@ -161,6 +171,7 @@ def fit_role_clusters(
         centers=centers,
         assignment=assignment,
         player_cluster=player_cluster,
+        player_vector=player_vector,
         seed=seed,
     )
 
@@ -172,9 +183,15 @@ def permuted_clustering(clustering: RoleClustering, seed: int) -> RoleClustering
 
     rng = np.random.default_rng(seed)
     players = list(clustering.player_cluster)
-    labels = np.array([clustering.player_cluster[p] for p in players])
-    shuffled = rng.permutation(labels)
-    permuted = {p: int(v) for p, v in zip(players, shuffled, strict=True)}
+    perm = rng.permutation(len(players))
+    permuted_cluster = {
+        players[i]: clustering.player_cluster[players[j]] for i, j in enumerate(perm)
+    }
+    permuted_vector = {
+        players[i]: clustering.player_vector[players[j]]
+        for i, j in enumerate(perm)
+        if players[j] in clustering.player_vector
+    }
     return RoleClustering(
         features=clustering.features,
         n_clusters=clustering.n_clusters,
@@ -182,6 +199,7 @@ def permuted_clustering(clustering: RoleClustering, seed: int) -> RoleClustering
         std=clustering.std,
         centers=clustering.centers,
         assignment=dict(clustering.assignment),
-        player_cluster=permuted,
+        player_cluster=permuted_cluster,
+        player_vector=permuted_vector,
         seed=seed,
     )

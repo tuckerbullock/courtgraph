@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from courtgraph.chemistry.baseline_ladder import LadderComparison
     from courtgraph.chemistry.mechanistic import MechanisticComparison
+    from courtgraph.chemistry.redundancy_eval import RedundancyComparison
     from courtgraph.chemistry.role_eval import RoleComparison
     from courtgraph.chemistry.transport import TransportResult
 
@@ -310,6 +311,32 @@ def run_mechanistic(
         seed=seed,
         n_boot=n_boot,
     )
+
+
+def run_redundancy(
+    stints_path: str | Path,
+    profiles_path: str | Path,
+    *,
+    n_clusters: int = 5,
+    seed: int = 0,
+    n_boot: int = 120,
+) -> RedundancyComparison:
+    """Fit the concentration-feature (redundancy / anti-synergy) model and
+    compare it against rungs 2/3 and a permuted-role placebo on the
+    leakage-safe holdouts. See :mod:`courtgraph.chemistry.redundancy_eval`."""
+
+    from courtgraph.chemistry.redundancy_eval import evaluate_redundancy
+    from courtgraph.features.player_season import read_player_profiles
+    from courtgraph.features.role_clusters import fit_role_clusters
+
+    table = read_stints(stints_path)
+    if len(table) < 50:
+        raise ValueError(f"{stints_path}: only {len(table)} stints; need more")
+    clustering = fit_role_clusters(
+        read_player_profiles(profiles_path), n_clusters=n_clusters, seed=seed
+    )
+    splits = make_all_splits(table)
+    return evaluate_redundancy(table, splits, clustering, seed=seed, n_boot=n_boot)
 
 
 @dataclass(frozen=True)

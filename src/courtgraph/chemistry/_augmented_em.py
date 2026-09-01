@@ -63,9 +63,10 @@ class AugmentedEMResult:
 def fit_augmented_em(
     design: DesignMatrices,
     feature_space: FeatureSpace,
-    extra_index: IntArray,
+    extra_index: IntArray | None,
     n_extra: int,
     *,
+    extra_dense: FloatArray | None = None,
     tau_c2: float,
     max_iters: int,
     tol: float,
@@ -73,8 +74,11 @@ def fit_augmented_em(
 ) -> AugmentedEMResult:
     """Fit ``[context | +offense | -defense | +extra]`` by empirical-Bayes EM.
 
-    ``extra_index`` is ``(n, K)`` with entries in ``[-1, n_extra)``. ``label``
-    only names the RuntimeWarning raised on a non-monotone log-likelihood.
+    The extra block is either sparse -- ``extra_index`` ``(n, K)`` with entries
+    in ``[-1, n_extra)``, scattered -- or dense -- ``extra_dense`` ``(n,
+    n_extra)`` of real per-stint feature values. Exactly one is given.
+    ``label`` only names the RuntimeWarning raised on a non-monotone
+    log-likelihood.
     """
 
     space = feature_space
@@ -88,11 +92,43 @@ def fit_augmented_em(
     n = design.n_rows
     context_weighted = design.context * w[:, None]
 
+    if (extra_index is None) == (extra_dense is None):
+        raise ValueError("pass exactly one of extra_index / extra_dense")
+    ed = extra_dense  # non-None iff dense
+    ei: IntArray = (
+        extra_index if extra_index is not None else np.empty((n, 0), dtype=np.int64)
+    )
+
+    def _extra_ctx() -> FloatArray:  # (q, n_context)
+        if ed is not None:
+            return np.asarray(ed.T @ context_weighted, dtype=np.float64)
+        return _cross_ctx(ei, context_weighted, q)
+
+    def _extra_gram() -> FloatArray:  # (q, q)
+        if ed is not None:
+            return np.asarray(ed.T @ (w[:, None] * ed), dtype=np.float64)
+        return _cross_gram(ei, ei, w, q, q)
+
+    def _player_extra(player_index: IntArray) -> FloatArray:  # (p, q)
+        if ed is not None:
+            return _cross_ctx(player_index, w[:, None] * ed, p)
+        return _cross_gram(player_index, ei, w, p, q)
+
+    def _extra_rhs() -> FloatArray:  # (q,)
+        if ed is not None:
+            return np.asarray(ed.T @ (w * y), dtype=np.float64)
+        return _cross_rhs(ei, w * y, q)
+
+    def _extra_contrib(coef: FloatArray) -> FloatArray:  # (n,)
+        if ed is not None:
+            return np.asarray(ed @ coef, dtype=np.float64)
+        return _gather_sum(coef, ei)
+
     gram = np.zeros((dim, dim), dtype=np.float64)
     gram[:c, :c] = context_weighted.T @ design.context
     g_oc = _cross_ctx(design.offense_index, context_weighted, p)
     g_dc = _cross_ctx(design.defense_index, context_weighted, p)
-    g_gc = _cross_ctx(extra_index, context_weighted, q)
+    g_gc = _extra_ctx()
     gram[:c, o0:d0] = g_oc.T
     gram[o0:d0, :c] = g_oc
     gram[:c, d0:g0] = -g_dc.T
@@ -105,14 +141,14 @@ def fit_augmented_em(
     gram[d0:g0, d0:g0] = _cross_gram(
         design.defense_index, design.defense_index, w, p, p
     )
-    gram[g0:, g0:] = _cross_gram(extra_index, extra_index, w, q, q)
+    gram[g0:, g0:] = _extra_gram()
     g_od = _cross_gram(design.offense_index, design.defense_index, w, p, p)
     gram[o0:d0, d0:g0] = -g_od
     gram[d0:g0, o0:d0] = -g_od.T
-    g_og = _cross_gram(design.offense_index, extra_index, w, p, q)
+    g_og = _player_extra(design.offense_index)
     gram[o0:d0, g0:] = g_og
     gram[g0:, o0:d0] = g_og.T
-    g_dg = _cross_gram(design.defense_index, extra_index, w, p, q)
+    g_dg = _player_extra(design.defense_index)
     gram[d0:g0, g0:] = -g_dg
     gram[g0:, d0:g0] = -g_dg.T
 
@@ -120,7 +156,7 @@ def fit_augmented_em(
     rhs[:c] = context_weighted.T @ y
     rhs[o0:d0] = _cross_rhs(design.offense_index, w * y, p)
     rhs[d0:g0] = -_cross_rhs(design.defense_index, w * y, p)
-    rhs[g0:] = _cross_rhs(extra_index, w * y, q)
+    rhs[g0:] = _extra_rhs()
 
     y_w_y = float((w * y**2).sum())
     sum_log_w = float(np.log(w).sum())
@@ -168,7 +204,7 @@ def fit_augmented_em(
             design.context @ mu[:c]
             + _gather_sum(mu_a, design.offense_index)
             - _gather_sum(mu_b, design.defense_index)
-            + _gather_sum(mu_g, extra_index)
+            + _extra_contrib(mu_g)
         )
         rss = float((w * (y - y_hat) ** 2).sum())
         trace_term = sigma2 * (dim - float((lam * v_diag).sum()))
