@@ -80,3 +80,35 @@ def fast_chemistry() -> ChemistryConfig:
         n_bootstrap=3,
         reference_sample=800,
     )
+
+
+def scale_synthetic() -> SyntheticConfig:
+    """A full-season-shaped player pool (~330 players, ~19k stints) -- large
+    enough that a re-introduced (n, n_players) allocation would blow memory /
+    time, small enough to fit in ~20-30 s."""
+
+    from courtgraph.chemistry.synthetic import SyntheticConfig
+
+    return SyntheticConfig(
+        seed=303,
+        n_players=330,
+        n_teams=30,
+        rotation_size=10,
+        n_seasons=2,
+        games_per_matchup=2,
+        stints_per_game=11,
+    )
+
+
+def scale_chemistry() -> ChemistryConfig:
+    from courtgraph.chemistry.chemistry_model import ChemistryConfig
+
+    return ChemistryConfig(
+        seed=0,
+        rank=3,
+        cross_fit_folds=2,
+        als_sweeps=6,
+        selection_folds=2,
+        n_bootstrap=0,
+        reference_sample=500,
+    )
