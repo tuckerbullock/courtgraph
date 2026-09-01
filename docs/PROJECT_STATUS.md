@@ -23,9 +23,14 @@ feed), not an independent lineage. No demonstrated betting edge exists.
   components learned by EM (not a CV scalar), per-lineup Gaussian predictive
   intervals, and a calibration module (`calibration.py`) with the contract's
   coverage / calibration-line / width-vs-error diagnostics. Standalone —
-  `ChemistryModel` / `evaluate.py` untouched. It did not out-calibrate rung 2 on
-  the real data (see *In progress*), but it is the reference the chemistry
-  claims are judged against.
+  `ChemistryModel` untouched. On the widened leakage-safe holdouts it
+  out-calibrates rung 2 on the two structural holdouts and is the reference the
+  chemistry claims are judged against (see *In progress*).
+- **Widened leakage-safe holdouts.** `make_unseen_pair_split` / `_lineup_split`
+  default to 60 held groups (from 8 / 12), with a per-pair size cap; the
+  chronological macro buckets by calendar month. On the real data the macro
+  group counts go 8 / 12 / 2 → 40 / 60 / 13, enough for a conclusive rung-N
+  comparison. Still outcome-blind and leakage-free.
 - **Chemistry model scales to a real player pool.** The additive baseline and
   the low-rank interaction fit now accumulate every Gram / rhs by `np.bincount`
   scatter over the 5 players per stint instead of dense `(n × n_players)`
@@ -100,17 +105,18 @@ feed), not an independent lineage. No demonstrated betting edge exists.
   - The **rank-5 low-rank interaction model does not beat the additive
     baseline** — nil on chronological, −0.08% on unseen-pair, −8.4% on
     unseen-lineup (macro RMSE). A genuine null / unfavourable result.
-  - **Rung 3 (empirical-Bayes hierarchical player model)** is now built and is
-    the contract's reference baseline (`courtgraph baselines`). Its EM learns a
-    heavy data-driven shrinkage (`σ²/τ_off² ≈ 2580`): better point RMSE than
-    rung 2 on chronological / unseen-lineup, much worse on unseen-pair (one
-    variance component can't serve a holdout that wants light pooling and two
-    that want heavy). Both models under-cover the structural holdouts, and the
-    macro group counts (2 / 8 / 12) are too small to judge calibration — a §26
-    stop condition. Numbers in `docs/CURRENT_TASK.md`.
-  - Next (a fork): widen the leakage-safe holdouts so the comparison has enough
-    groups; or rung 4 (explicit pair interactions), which is what the single-
-    variance-component ceiling calls for.
+  - **Rung 3 (empirical-Bayes hierarchical player model)** is built, and after
+    widening the leakage-safe holdouts (8 → 40 pairs, 12 → 60 lineups, 2 → 13
+    chronological months) it **beats rung 2 on calibration and stability** on
+    the two structural holdouts — near-ideal standardized-residual SD (1.06 /
+    1.04 vs rung 2's 1.45 / 1.59), calibration slope ~1 on unseen-pair, coverage
+    close to nominal, and marginally better point RMSE everywhere. It clears the
+    contract's rung-3 exit criterion and is now the reference baseline the
+    chemistry claims are judged against. Both models fail the chronological
+    holdout (systematic under-prediction under era / roster drift). Numbers in
+    `docs/CURRENT_TASK.md`.
+  - Next: rung 4 (explicit teammate-pair interactions), evaluated against the
+    rung-3 reference on the wider holdouts.
 
 ## Not started
 - Recovering the 840 quarantined regular-season games (503 `network_required`,
@@ -151,7 +157,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 179 unit tests, Ruff, mypy over 51 source
+The current implementation passes 181 unit tests, Ruff, mypy over 51 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
 --ingest-dir`) on the local five-season regular-season archive: 6,000 games
@@ -168,14 +174,15 @@ no-signal control produces no improvement.
 
 ## Next verifiable outcome
 
-Rungs 2, 3, and 5 have now been fit and evaluated on the 266k real stints
-(`docs/CURRENT_TASK.md`): rung 5 (low-rank interaction) does not beat rung 2,
-and rung 3 (hierarchical EB) does not out-calibrate it — with the macro holdout
-group counts (2 / 8 / 12) too small to judge calibration reliably. The next
-verifiable step is to **widen the leakage-safe holdouts** (more held-out pairs /
-lineups; rolling-origin chronological folds) so any rung-N comparison is
-conclusive, then rung 4 (explicit teammate-pair interactions). Advanced models
-stay gated on a rung actually improving a preregistered task.
+Rungs 2, 3, and 5 have been fit and evaluated on the 266k real stints against
+the widened holdouts (`docs/CURRENT_TASK.md`): rung 3 (hierarchical EB)
+out-calibrates rung 2 on the structural holdouts and is the reference baseline;
+rung 5 (low-rank interaction) does not beat rung 2. The next verifiable step is
+**rung 4 — explicit teammate-pair interactions** — evaluated against the rung-3
+reference: it must beat rung 2 on seen pairs (§11), and its held-out
+unseen-pair / unseen-lineup calibration must not degrade relative to rung 3
+(§15). Advanced models stay gated on a rung actually improving a preregistered
+task.
 
 ## Governing document
 
