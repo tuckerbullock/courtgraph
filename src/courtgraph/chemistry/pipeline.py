@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from courtgraph.chemistry.baseline_ladder import LadderComparison
+    from courtgraph.chemistry.role_eval import RoleComparison
     from courtgraph.chemistry.transport import TransportResult
 
 from courtgraph.chemistry.artifact import load_model, save_model
@@ -236,6 +237,37 @@ def run_transport(
         seed=seed,
         n_boot=n_boot,
         rung4_config=PairHierarchicalConfig() if rung4 else None,
+    )
+
+
+def run_roles(
+    stints_path: str | Path,
+    profiles_path: str | Path,
+    *,
+    n_clusters: int = 5,
+    seed: int = 0,
+    n_boot: int = 120,
+) -> RoleComparison:
+    """Fit role clusters from ``profiles_path``, then compare the
+    role-conditioned interaction model against rungs 2/3 and a permuted-role
+    placebo on the leakage-safe holdouts. See
+    :mod:`courtgraph.chemistry.role_eval`."""
+
+    from courtgraph.chemistry.role_eval import evaluate_role_interaction
+    from courtgraph.features.player_season import read_player_profiles
+    from courtgraph.features.role_clusters import fit_role_clusters
+
+    table = read_stints(stints_path)
+    if len(table) < 50:
+        raise ValueError(
+            f"{stints_path}: only {len(table)} stints; need a substantially "
+            "larger table"
+        )
+    profiles = read_player_profiles(profiles_path)
+    clustering = fit_role_clusters(profiles, n_clusters=n_clusters, seed=seed)
+    splits = make_all_splits(table)
+    return evaluate_role_interaction(
+        table, splits, clustering, seed=seed, n_boot=n_boot
     )
 
 

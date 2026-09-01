@@ -124,9 +124,20 @@ an operator `official_totals.json` when present, otherwise the data.nba.com game
 feed (labelled per game) — a second NBA surface, not an independent provider.
 
 The five regular seasons 2020-21 → 2024-25 have been ingested locally this way
-(5,158 / 5,998 games → 266,518 stints); the data stays gitignored. No model has
-been fit on it yet, and a within-NBA score check is not evidence of predictive
-accuracy.
+(5,158 / 5,998 games → 266,518 stints); the data stays gitignored. A
+within-NBA score check is not evidence of predictive accuracy.
+
+## Interaction research (`baselines`, `transport`, `roles`)
+
+`courtgraph baselines` compares the model-ladder rungs (2 additive / 3
+hierarchical EB / 4 explicit pairs) on the leakage-safe holdouts;
+`courtgraph transport` trains on one stint file and evaluates on a disjoint
+one (regular season → held-out playoffs); `courtgraph player-features` derives
+per-(player, season) role/skill profiles from a snapshot, and `courtgraph
+roles` fits a role-conditioned interaction model against those profiles. What
+these have and have not shown on the real data — five interaction nulls and
+one weak positive — is the standing record in
+[`docs/INTERACTION_FINDINGS.md`](docs/INTERACTION_FINDINGS.md).
 
 ## Local browser app (`courtgraph app`)
 
