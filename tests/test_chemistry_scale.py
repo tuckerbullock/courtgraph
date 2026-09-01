@@ -81,6 +81,40 @@ class ScaleTests(unittest.TestCase):
         self.assertLess(time.perf_counter() - start, 5.0)
         self.assertEqual(len(pred), 400)
 
+    def test_pair_hierarchical_fit_is_tractable(self) -> None:
+        from _chemistry_support import recovery_synthetic
+        from courtgraph.chemistry.features import FeatureSpace
+        from courtgraph.chemistry.pair_interaction import (
+            PairHierarchicalConfig,
+            PairHierarchicalRidge,
+            PairVocabulary,
+        )
+        from courtgraph.chemistry.synthetic import generate
+
+        table, _truth = generate(recovery_synthetic())  # ~90 players, ~6k stints
+        space = FeatureSpace.from_training(table)
+        design = space.build(table)
+        vocab = PairVocabulary.from_training(table, min_co_stints=10)
+        self.assertGreater(vocab.n_pairs, 100)  # a real pair block, not a toy
+
+        tracemalloc.start()
+        start = time.perf_counter()
+        model = PairHierarchicalRidge.fit(
+            design,
+            space,
+            vocab,
+            config=PairHierarchicalConfig(tol=1e-6, max_iters=30),
+        )
+        elapsed = time.perf_counter() - start
+        _current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        self.assertEqual(model.pair_coef.shape, (vocab.n_pairs,))
+        # a dense (n_stints, n_pairs) intermediate would be ~n*n_pairs*8 bytes;
+        # 500 MB catches its reintroduction while allowing the (dim, dim) Gram.
+        self.assertLess(peak, 500_000_000, f"peak {peak / 1e6:.0f} MB")
+        self.assertLess(elapsed, 30.0, f"fit took {elapsed:.0f}s")
+
 
 if __name__ == "__main__":
     unittest.main()

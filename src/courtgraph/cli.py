@@ -109,6 +109,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="rung-2 predictive-band resamples (0 to skip the band)",
     )
     baselines.add_argument("--seed", type=int, default=0, help="bootstrap seed")
+    baselines.add_argument(
+        "--rung4",
+        action="store_true",
+        help="also fit rung 4 (explicit teammate-pair interaction; slower)",
+    )
     baselines.add_argument("--json", action="store_true", help="print result as JSON")
 
     ingest = subparsers.add_parser(
@@ -368,7 +373,9 @@ def _cmd_baselines(args: argparse.Namespace, stream: TextIO) -> int:
     if args.bootstrap < 0:
         print("baselines: --bootstrap must be >= 0", file=stream)
         return 2
-    comparison = run_baselines(args.input, seed=args.seed, n_boot=args.bootstrap)
+    comparison = run_baselines(
+        args.input, seed=args.seed, n_boot=args.bootstrap, rung4=args.rung4
+    )
     if args.json:
         print(json.dumps(comparison.as_dict(), indent=2, sort_keys=True), file=stream)
         return 0
@@ -381,20 +388,43 @@ def _cmd_baselines(args: argparse.Namespace, stream: TextIO) -> int:
         f"({vc['n_iters']} EM iters, {conv})",
         file=stream,
     )
-    header = (
-        f"  {'holdout':<14} {'groups':>6}  {'r2 macro':>9} {'r3 macro':>9}  "
-        f"{'r3 cov50/80/95':>16}  {'r3 slope':>8}"
+    r4 = args.rung4
+    print(
+        f"  {'holdout':<14} {'groups':>6}  {'r2 macro':>9} {'r3 macro':>9}"
+        + (f" {'r4 macro':>9}" if r4 else "")
+        + f"  {'r3 cov50/80/95':>16}  {'r3 slope':>8}",
+        file=stream,
     )
-    print(header, file=stream)
     for h in comparison.holdouts:
         cal = h.rung3_calibration
-        print(
+        line = (
             f"  {h.kind:<14} {h.n_groups:>6}  {h.rung2_macro_rmse:>9.3f} "
-            f"{h.rung3_macro_rmse:>9.3f}  "
-            f"{cal['coverage_50']:>4.2f}/{cal['coverage_80']:.2f}/"
-            f"{cal['coverage_95']:.2f}   {cal['slope']:>8.2f}",
-            file=stream,
+            f"{h.rung3_macro_rmse:>9.3f}"
         )
+        if r4 and h.rung4_macro_rmse is not None:
+            line += f" {h.rung4_macro_rmse:>9.3f}"
+        elif r4:
+            line += f" {'-':>9}"
+        line += (
+            f"  {cal['coverage_50']:>4.2f}/{cal['coverage_80']:.2f}/"
+            f"{cal['coverage_95']:.2f}   {cal['slope']:>8.2f}"
+        )
+        print(line, file=stream)
+        if r4 and h.rung4_pair_covered is not None:
+            cov = h.rung4_pair_covered
+            deg = h.rung4_pair_degraded or {}
+            n_cov = int(cov.get("n_groups", 0))
+            scores = (
+                f"r2={cov['rung2_macro_rmse']:.3f} r4={cov['rung4_macro_rmse']:.3f}"
+                if n_cov
+                else "no fully-covered lineups"
+            )
+            print(
+                f"    seen-pairs (rung-4 exit test): {scores} "
+                f"({n_cov} lineups); pair-degraded {int(deg.get('n_groups', 0))} "
+                "lineups",
+                file=stream,
+            )
     return 0
 
 

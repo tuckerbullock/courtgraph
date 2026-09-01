@@ -176,12 +176,18 @@ def evaluate_model_file(
 
 
 def run_baselines(
-    input_path: str | Path, *, seed: int = 0, n_boot: int = 150
+    input_path: str | Path,
+    *,
+    seed: int = 0,
+    n_boot: int = 150,
+    rung4: bool = False,
 ) -> LadderComparison:
-    """Fit rung 2 (additive RAPM) and rung 3 (hierarchical EB) and compare
+    """Fit rung 2 (additive RAPM) and rung 3 (hierarchical EB) -- and, when
+    ``rung4`` is set, rung 4 (explicit teammate-pair interaction) -- and compare
     point accuracy + interval calibration on the leakage-safe holdouts."""
 
     from courtgraph.chemistry.baseline_ladder import compare_rungs
+    from courtgraph.chemistry.pair_interaction import PairHierarchicalConfig
 
     table = read_stints(input_path)
     if len(table) < 50:
@@ -190,7 +196,13 @@ def run_baselines(
             "table to compare the baselines"
         )
     splits = make_all_splits(table)
-    return compare_rungs(table, splits, seed=seed, n_boot=n_boot)
+    return compare_rungs(
+        table,
+        splits,
+        seed=seed,
+        n_boot=n_boot,
+        rung4_config=PairHierarchicalConfig() if rung4 else None,
+    )
 
 
 @dataclass(frozen=True)
