@@ -165,6 +165,42 @@ class SplitConstructionTests(unittest.TestCase):
         for lid in manifest.held_out_lineups:
             self.assertNotIn(lid, train_lineups)
 
+    def test_default_splits_hold_many_macro_groups_on_a_full_pool(self) -> None:
+        from _chemistry_support import scale_synthetic
+        from courtgraph.chemistry.evaluate import _group_index
+        from courtgraph.chemistry.splits import make_all_splits, verify_split
+        from courtgraph.chemistry.synthetic import generate
+
+        table, _ = generate(scale_synthetic())  # ~330 players, ~19k stints, 2 seasons
+        splits = make_all_splits(table)
+        # was 2 / 8 / 12 before the widening; a macro comparison needs more.
+        # (chronological is limited by the fixture's 2 compressed seasons; on the
+        # real 5-season data it buckets into ~13 months.)
+        minimum = {"chronological": 4, "unseen_pair": 20, "unseen_lineup": 20}
+        for kind, manifest in splits.items():
+            self.assertEqual(verify_split(table, manifest), [], kind)
+            groups = _group_index(manifest.test_table(table), manifest)
+            self.assertGreaterEqual(
+                len(groups), minimum[kind], f"{kind}: {len(groups)} groups"
+            )
+
+    def test_unseen_pair_caps_any_single_pair(self) -> None:
+        from courtgraph.chemistry.splits import make_unseen_pair_split
+        from courtgraph.chemistry.stints import pair_id
+
+        manifest = make_unseen_pair_split(self.table, n_pairs=20)
+        cap = manifest.parameters["per_pair_cap"]
+        by_pair: dict[str, int] = {}
+        for stint in manifest.test_table(self.table):
+            ids = stint.offense_player_ids
+            for a in range(5):
+                for b in range(a + 1, 5):
+                    key = pair_id(ids[a], ids[b])
+                    if key in manifest.held_out_pairs:
+                        by_pair[key] = by_pair.get(key, 0) + 1
+        for key, count in by_pair.items():
+            self.assertLessEqual(count, cap, key)
+
     def test_manifest_round_trips_through_json(self) -> None:
         from courtgraph.chemistry.splits import SplitManifest, make_unseen_pair_split
 

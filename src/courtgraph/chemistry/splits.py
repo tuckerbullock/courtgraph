@@ -144,10 +144,11 @@ def make_chronological_split(
 def make_unseen_pair_split(
     table: StintTable,
     *,
-    n_pairs: int = 8,
+    n_pairs: int = 60,
     min_test_stints: int = 3,
     min_solo_train_stints: int = 8,
-    max_test_fraction: float = 0.12,
+    max_test_fraction: float = 0.15,
+    max_stints_per_pair_fraction: float = 0.01,
     seed: int = 0,
 ) -> SplitManifest:
     """Structurally unseen teammate pairs.
@@ -157,9 +158,10 @@ def make_unseen_pair_split(
     offensive training stints without the partner**, so both players stay
     individually observed. Pairs are added greedily by shared-floor-time
     (descending, tiebreak by id) until ``n_pairs`` are held. ``max_test_fraction``
-    is a hard upper bound on the held-out size for **every** candidate, including
-    the first: a pair whose removal would push the cumulative test set past the
-    budget is skipped. Outcome-blind.
+    is a hard upper bound on the cumulative held-out size;
+    ``max_stints_per_pair_fraction`` caps any single pair so a handful of
+    very-high-minute pairs cannot consume the whole budget and starve the macro
+    group count. Outcome-blind.
 
     Raises :class:`UnsatisfiableSplitError` when the budget (and the
     solo-observation constraint) admit no pair at all, rather than returning an
@@ -178,8 +180,13 @@ def make_unseen_pair_split(
             for b in range(a + 1, 5):
                 co_stints.setdefault(pair_id(ids[a], ids[b]), []).append(stint.stint_id)
 
+    per_pair_cap = max(min_test_stints, int(max_stints_per_pair_fraction * n_total))
     candidates = sorted(
-        (key for key, s in co_stints.items() if len(s) >= min_test_stints),
+        (
+            key
+            for key, s in co_stints.items()
+            if min_test_stints <= len(s) <= per_pair_cap
+        ),
         key=lambda k: (-len(co_stints[k]), k),
     )
 
@@ -236,9 +243,12 @@ def make_unseen_pair_split(
         ),
         parameters={
             "n_pairs": n_pairs,
+            "held": len(held),
             "min_test_stints": min_test_stints,
             "min_solo_train_stints": min_solo_train_stints,
             "max_test_fraction": max_test_fraction,
+            "max_stints_per_pair_fraction": max_stints_per_pair_fraction,
+            "per_pair_cap": per_pair_cap,
             "seed": seed,
         },
     )
@@ -247,7 +257,7 @@ def make_unseen_pair_split(
 def make_unseen_lineup_split(
     table: StintTable,
     *,
-    n_lineups: int = 12,
+    n_lineups: int = 60,
     min_test_stints: int = 3,
     seed: int = 0,
 ) -> SplitManifest:
@@ -284,6 +294,7 @@ def make_unseen_lineup_split(
         ),
         parameters={
             "n_lineups": n_lineups,
+            "held": len(held),
             "min_test_stints": min_test_stints,
             "seed": seed,
         },
