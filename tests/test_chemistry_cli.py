@@ -278,6 +278,63 @@ class ChemistryCommandTests(unittest.TestCase):
         self.assertIn("rung4_pair_level", chron)
         self.assertIn("n_pair_groups", chron["rung4_pair_level"])
 
+    def test_transport_evaluates_a_disjoint_second_file(self) -> None:
+        from courtgraph.chemistry.stints import StintTable, read_stints, write_stints
+
+        table = read_stints(self.demo.stints_path)
+        games = sorted({s.game_id for s in table})
+        cut = set(games[: int(len(games) * 0.8)])
+        train_path = Path(self._dir.name) / "transport_train.jsonl"
+        test_path = Path(self._dir.name) / "transport_test.jsonl"
+        write_stints(
+            StintTable.from_stints([s for s in table if s.game_id in cut]), train_path
+        )
+        write_stints(
+            StintTable.from_stints([s for s in table if s.game_id not in cut]),
+            test_path,
+        )
+
+        out = StringIO()
+        code = main(
+            [
+                "transport",
+                "--train",
+                str(train_path),
+                "--test",
+                str(test_path),
+                "--bootstrap",
+                "0",
+                "--rung4",
+                "--json",
+            ],
+            output=out,
+        )
+        self.assertEqual(code, 0)
+        payload = json.loads(out.getvalue())
+        self.assertEqual(payload["leakage_violations"], [])
+        self.assertIn("test_players_unseen_in_train", payload["coverage"])
+        self.assertIn("zeroed_context_columns", payload)
+        self.assertIn("rung2_macro_rmse", payload)
+        self.assertIn("z_mean", payload["rung3_calibration"])
+        self.assertIn("rung4_pair_level", payload)
+        self.assertIn("clutch", payload["micro_rmse"])
+        self.assertIn("seen", payload["by_novelty"])
+
+    def test_transport_rejects_negative_bootstrap(self) -> None:
+        code = main(
+            [
+                "transport",
+                "--train",
+                str(self.demo.stints_path),
+                "--test",
+                str(self.demo.stints_path),
+                "--bootstrap",
+                "-1",
+            ],
+            output=StringIO(),
+        )
+        self.assertEqual(code, 2)
+
     def test_baselines_rejects_negative_bootstrap(self) -> None:
         code = main(
             [

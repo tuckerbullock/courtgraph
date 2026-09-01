@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from courtgraph.chemistry.baseline_ladder import LadderComparison
+    from courtgraph.chemistry.transport import TransportResult
 
 from courtgraph.chemistry.artifact import load_model, save_model
 from courtgraph.chemistry.chemistry_model import (
@@ -199,6 +200,39 @@ def run_baselines(
     return compare_rungs(
         table,
         splits,
+        seed=seed,
+        n_boot=n_boot,
+        rung4_config=PairHierarchicalConfig() if rung4 else None,
+    )
+
+
+def run_transport(
+    train_path: str | Path,
+    test_path: str | Path,
+    *,
+    seed: int = 0,
+    n_boot: int = 150,
+    rung4: bool = False,
+) -> TransportResult:
+    """Fit rungs 2/3 (and, when ``rung4`` is set, rung 4) on ``train_path`` -- the
+    regular season -- and evaluate them on the held-out ``test_path`` -- the
+    playoffs. See :mod:`courtgraph.chemistry.transport`."""
+
+    from courtgraph.chemistry.pair_interaction import PairHierarchicalConfig
+    from courtgraph.chemistry.transport import evaluate_transport
+
+    train_table = read_stints(train_path)
+    test_table = read_stints(test_path)
+    if len(train_table) < 50:
+        raise ValueError(
+            f"{train_path}: only {len(train_table)} training stints; need a "
+            "substantially larger table"
+        )
+    if len(test_table) < 10:
+        raise ValueError(f"{test_path}: only {len(test_table)} test stints")
+    return evaluate_transport(
+        train_table,
+        test_table,
         seed=seed,
         n_boot=n_boot,
         rung4_config=PairHierarchicalConfig() if rung4 else None,

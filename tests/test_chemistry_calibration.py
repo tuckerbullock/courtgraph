@@ -55,6 +55,20 @@ class CalibrationTests(unittest.TestCase):
             calibration_line(point, sd, realized)["slope"], 2.0, delta=0.05
         )
 
+    def test_calibration_line_is_uninformative_when_the_slope_is_unidentified(
+        self,
+    ) -> None:
+        import numpy as np
+
+        from courtgraph.chemistry.calibration import calibration_line
+
+        # one group, and several groups with no spread in the point predictions
+        for point in (np.array([1.2]), np.full(6, 3.4)):
+            sd = np.ones_like(point)
+            realized = point + 0.5
+            line = calibration_line(point, sd, realized)
+            self.assertEqual(line, {"intercept": 0.0, "slope": 1.0})
+
     def test_underdispersed_intervals_undercover(self) -> None:
         import numpy as np
 
