@@ -116,6 +116,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     baselines.add_argument("--json", action="store_true", help="print result as JSON")
 
+    transport = subparsers.add_parser(
+        "transport",
+        help="fit rungs 2/3 (and --rung4) on one stint file (the regular season) "
+        "and evaluate them on a held-out second file (the playoffs)",
+    )
+    transport.add_argument(
+        "--train", type=Path, required=True, help="training stint file (regular season)"
+    )
+    transport.add_argument(
+        "--test", type=Path, required=True, help="held-out stint file (playoffs)"
+    )
+    transport.add_argument(
+        "--bootstrap",
+        type=int,
+        default=150,
+        help="rung-2 predictive-band resamples (0 to skip the band)",
+    )
+    transport.add_argument("--seed", type=int, default=0, help="bootstrap seed")
+    transport.add_argument(
+        "--rung4",
+        action="store_true",
+        help="also fit rung 4 (explicit teammate-pair interaction; slower)",
+    )
+    transport.add_argument("--json", action="store_true", help="print result as JSON")
+
     ingest = subparsers.add_parser(
         "ingest",
         help="convert an offline NBA snapshot into validated stint records",
@@ -429,6 +454,109 @@ def _cmd_baselines(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_transport(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import run_transport
+
+    if args.bootstrap < 0:
+        print("transport: --bootstrap must be >= 0", file=stream)
+        return 2
+    result = run_transport(
+        args.train,
+        args.test,
+        seed=args.seed,
+        n_boot=args.bootstrap,
+        rung4=args.rung4,
+    )
+    if args.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True), file=stream)
+        return 0
+
+    if result.leakage_violations:
+        for v in result.leakage_violations:
+            print(f"  LEAKAGE: {v}", file=stream)
+
+    cov = result.coverage
+    print(
+        f"transport: train {result.n_train} stints -> test {result.n_test} stints; "
+        f"{int(cov['test_players_unseen_in_train'])} of "
+        f"{int(cov['test_players'])} test players unseen in train",
+        file=stream,
+    )
+    print(
+        f"  test lineups: {int(cov['test_stints_seen_lineup'])} seen / "
+        f"{int(cov['test_stints_partially_seen_lineup'])} partially-seen / "
+        f"{int(cov['test_stints_unseen_lineup'])} unseen (by stint)",
+        file=stream,
+    )
+    if result.zeroed_context_columns:
+        print(
+            "  zeroed context columns unidentified in train: "
+            + ", ".join(result.zeroed_context_columns),
+            file=stream,
+        )
+    vc = result.variance_components
+    conv = "converged" if vc["converged"] else "NOT converged"
+    print(
+        f"  rung-3 EB: sigma={vc['sigma']:.2f}  tau_off={vc['tau_off']:.2f}  "
+        f"tau_def={vc['tau_def']:.2f}  ({vc['n_iters']} EM iters, {conv})",
+        file=stream,
+    )
+    c3 = result.rung3_calibration
+    r4_macro = (
+        f"  r4={result.rung4_macro_rmse:.3f}"
+        if result.rung4_macro_rmse is not None
+        else ""
+    )
+    print(
+        f"  playoff lineups ({result.n_lineup_groups} groups): "
+        f"r2={result.rung2_macro_rmse:.3f}  r3={result.rung3_macro_rmse:.3f}"
+        + r4_macro,
+        file=stream,
+    )
+    print(
+        f"    rung-3 calibration: cov {c3['coverage_50']:.2f}/"
+        f"{c3['coverage_80']:.2f}/{c3['coverage_95']:.2f}  "
+        f"z_mean={c3['z_mean']:.2f}  z_sd={c3['z_sd']:.2f}  slope={c3['slope']:.2f}",
+        file=stream,
+    )
+    for nov, entry in result.by_novelty.items():
+        if not entry.get("n_groups"):
+            continue
+        r4b = (
+            f"  r4={entry['rung4_macro_rmse']:.3f}"
+            if "rung4_macro_rmse" in entry
+            else ""
+        )
+        print(
+            f"    {nov:<15} {int(entry['n_groups']):>3} groups: "
+            f"r2={entry['rung2_macro_rmse']:.3f}  r3={entry['rung3_macro_rmse']:.3f}"
+            + r4b,
+            file=stream,
+        )
+    if result.rung4_pair_level is not None:
+        pl = result.rung4_pair_level
+        n_pg = int(pl.get("n_pair_groups", 0))
+        if n_pg:
+            print(
+                f"  playoff seen-pairs ({n_pg} pairs): "
+                f"r2={pl['rung2_macro_rmse']:.3f}  r4={pl['rung4_macro_rmse']:.3f}  "
+                f"r4-placebo={pl['rung4_placebo_macro_rmse']:.3f}",
+                file=stream,
+            )
+    m = result.micro_rmse
+    for label in ("all", "clutch", "non_clutch"):
+        e = m[label]
+        cols = "  ".join(
+            f"{k.split('_')[0]}={e[k]:.2f}" for k in e if k.endswith("_micro_rmse")
+        )
+        print(
+            f"  {label:<10} ({int(e['n_stints'])} stints, "
+            f"{int(e['possessions'])} poss): {cols}",
+            file=stream,
+        )
+    return 0
+
+
 def _cmd_ingest(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.ingest.pipeline import run_ingest
     from courtgraph.ingest.policy import IngestPolicy
@@ -586,6 +714,7 @@ _COMMANDS = {
     "snapshot-from-shufinskiy": _cmd_snapshot_from_shufinskiy,
     "fit": _cmd_fit,
     "baselines": _cmd_baselines,
+    "transport": _cmd_transport,
     "predict": _cmd_predict,
 }
 

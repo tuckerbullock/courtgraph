@@ -51,6 +51,11 @@ def calibration_line(
     A well-calibrated point model has slope ~ 1 and intercept ~ 0.
     """
 
+    # Fewer than two groups, or no spread in the point predictions, leaves the
+    # slope unidentified -- report the uninformative line rather than raising.
+    if len(point) < 2 or float(np.ptp(point)) == 0.0:
+        return {"intercept": 0.0, "slope": 1.0}
+
     weight = 1.0 / sd**2
     design = np.column_stack([np.ones_like(point), point])
     dw = design * weight[:, None]

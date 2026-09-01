@@ -4,100 +4,134 @@ Last updated: 2026-09-01
 
 ## State
 
-Done — **better-powered pair-interaction evaluation (roadmap direction #2)
-built, tested, and run on the 266k real regular-season stints.** Branch
-`task/pair-level-eval` off `main` (`b57376c`). Committed, PR open, **not merged**.
+Done — **playoffs transport test (roadmap direction #3) built, tested, and run
+on the 266k RS stints -> the held-out 2024-25 playoffs (3,325 stints).** Branch
+`task/playoffs-transport` off `main` (`653c734`). Committed; PR open.
 
-**Result: the rung-4 null holds at proper statistical power.** A pair-level
-"seen pairs" exit test over 668 recurring admitted pairs (vs the old 209
-all-pairs-covered lineups), with a placebo control, shows rung 4's tiny edge
-over rung 2 is **entirely reproduced by randomly-wired pair parameters** — it
-is not pair-specific chemistry signal. Fourth consecutive null for
-non-additive lineup structure on this data. All results preserved.
+**Result: the interaction null holds under phase transport too -- a fifth
+consecutive null.** But rung 3's empirical-Bayes predictive intervals
+*transport* to the playoffs with near-nominal coverage, where rung 2's
+bootstrap band does not. All results preserved.
 
-## What was built (`d4559ce`)
+## What was built (`af1d2d9`)
 
-- **`_pair_level_breakdown`** (`baseline_ladder.py`) — the rung-4 §11 exit test,
-  re-cast from lineup-level to pair-level. Buckets held-out chronological stints
-  by each admitted offensive pair; macro RMSE over every pair recurring in the
-  test window (>= 5 test stints). 668 pair groups on the real data, vs 209
-  all-10-pairs-covered lineups for the old test — properly powered.
-- **`_placebo_vocab`** + `PairVocabulary.row_override` — a real control. Routes
-  each admitted pair's stints to a randomly chosen coefficient row drawn **with
-  replacement**: same parameter count, same total pair exposure, but distinct
-  pairs collide onto shared rows so the fit cannot carry pair-specific signal.
-  (The version sketched earlier — permuting pair -> row — was a no-op: the model
-  is exactly permutation-invariant. Verified `mean|pred - placebo_pred| = 0`
-  before the fix.) Validated on a planted-`γ` synthetic: real rung 4 macro RMSE
-  **0.61** vs placebo **1.16** vs rung 2 **1.87**; with no planted pair signal
-  all three collapse to ~**0.50** and `τ_pair -> ~0.15`. The test discriminates.
-- `courtgraph baselines --rung4` human output now prints the pair-level line
-  (`r2 / r4 / r4-placebo`); JSON gains `rung4_pair_level`, keeps the
-  lineup-level `rung4_pair_covered` / `_degraded` fields.
-- 191 tests; ruff / format / mypy / dependency-free path clean.
+- **`src/courtgraph/chemistry/transport.py`** -- `evaluate_transport(train,
+  test, ...)`: fits rungs 2/3(/4) on one stint table and evaluates on a
+  disjoint second one. Distinct from `compare_rungs` (which partitions one
+  table).
+  - leakage gate: no shared game or stint reaches both sides; a coverage
+    report (test players / pairs / lineup novelty vs. train);
+  - macro RMSE + calibration over recurring playoff lineups, split by
+    playoff-lineup **novelty** (`seen` / `partially-seen` / `unseen` vs. the
+    regular season);
+  - the rung-4 pair-level "seen pairs" test + placebo control, over
+    RS-admitted pairs recurring in the playoffs;
+  - possession-weighted error on **all / clutch / non-clutch** stints
+    (clutch = one-possession game, 4th quarter or later).
+- **The `playoff` context column is zeroed in the test design.** The regular
+  season has no playoff rows, so that coefficient is pure prior; left in place
+  it gives every playoff row a posterior variance of ~`tau_c2` (1e6) and the
+  rung-3/4 predictive SD explodes to ~1000. Point predictions are unchanged
+  (the coefficient is ~0). Reported in `zeroed_context_columns`.
+- `calibration_line` now returns the uninformative line (slope 1, intercept 0)
+  for < 2 groups or zero spread in the point predictions, instead of raising.
+- `courtgraph transport --train ... --test ... [--rung4] [--bootstrap N]`.
+- Validated on a two-phase synthetic with a shared, *transferable* planted pair
+  effect: the pair-level test finds it (r4 0.47 vs placebo 0.66 vs additive
+  1.39) and finds nothing when `tau_pair = 0`. 200 tests; ruff / mypy /
+  dep-free clean.
 
-## Result — pair-level exit test on the 266k real stints
+## Result -- 266k RS -> 2024-25 playoffs
 
-`courtgraph baselines --input …/rs_2020_2024/out/stints.jsonl --bootstrap 120
---rung4`. Result: `data/nba_snapshots/rs_2020_2024/chem_rung4_pairlevel_eval.json`
-(gitignored). Chronological holdout, 2,357 admitted pairs (>= 200 train
-co-stints), rung-3 EM converged in 78 iters.
+`courtgraph transport --train .../rs_2020_2024/out/stints.jsonl --test
+.../all_2025_playoffs/out/stints.jsonl --bootstrap 120 --rung4`. Result:
+`data/nba_snapshots/all_2025_playoffs/chem_transport_eval.json` (gitignored).
 
-**Pair-level "seen pairs" test** (macro RMSE over 668 admitted pairs recurring
-in the held-out window, points per 100):
+Clean transport: 0 shared games, all **210** playoff players seen in the RS,
+**512 of 964** playoff offensive pairs admitted in the RS vocab, rung-3 EM
+converged (78 iters).
 
-| | macro RMSE over 668 pair groups |
+### Point accuracy -- another interaction null
+
+**Pair-level "seen pairs" test** (macro RMSE over 476 RS-admitted pairs
+recurring in the playoffs, >= 5 playoff stints each):
+
+| | macro RMSE |
 |---|---|
-| rung 2 (additive ridge) | 8.669 |
-| rung 4 (explicit `γ_ij`) | 8.543 |
-| **rung 4, placebo pairs** | **8.541** |
+| rung 2 (additive ridge) | 12.98 |
+| rung 4 (explicit `gamma_ij`) | 13.22 |
+| **rung 4, placebo pairs** | **13.24** |
 
-Rung 4 is 1.5% better than rung 2 — and the placebo (same parameter count,
-scrambled pair->row wiring) is **exactly as good** (a hair better). The small
-rung-2 -> rung-4 gain is added-parameter noise absorption, **not** teammate
-chemistry. Exit test **not met**: rung 4 does not beat rung 2 on seen pairs in
-any way the placebo doesn't.
+Rung 4 is **worse** than additive and indistinguishable from its placebo. The
+regular-season pair terms carry no transferable predictive value into the
+playoffs.
 
-For reference, the underpowered lineup-level test from the rung-4 task
-(unchanged here): 209 all-pairs-covered lineups, rung 2 47.28 vs rung 4 47.46.
-Same direction.
+**Macro RMSE over 157 recurring playoff lineups** (points per 100):
 
-**Macro RMSE / calibration on the widened holdouts** — identical to the rung-4
-run (deterministic): rung 4 3.843 / 19.222 / 5.495 vs rung 3 3.551 / 19.203 /
-5.256; rung 4 calibration no better than rung 3.
+| bucket | groups | rung 2 | rung 3 | rung 4 |
+|---|---|---|---|---|
+| all playoff lineups | 157 | 23.92 | 24.00 | 24.23 |
+| `seen` (five played together in RS) | 136 | 24.60 | 24.78 | 25.06 |
+| `partially-seen` (pairs seen, five not) | 20 | 19.37 | 18.67 | **18.32** |
+| `unseen` | 1 | -- | -- | -- |
+
+Flat overall; rung 4 marginally worst on `seen`. The one place the interaction
+models edge ahead is `partially-seen` (rung 4 ~5.5% below rung 2) -- but that
+is 20 noisy group means, not a claim.
+
+**Clutch** (302 one-possession 4th-quarter-or-later stints, possession-weighted
+micro RMSE): rung 2 69.41, rung 3 69.33, rung 4 69.23. Non-clutch: 65.59 /
+65.60 / 65.60. No clutch-specific interaction effect.
+
+### Calibration -- rung 3's intervals transport, rung 2's do not
+
+157 playoff lineup groups, coverage at 50 / 80 / 95 %:
+
+| model | cov 50 / 80 / 95 | z_mean | z_sd | slope |
+|---|---|---|---|---|
+| rung 2 band | .30 / .53 / .75 | -0.16 | 1.69 | 0.73 |
+| rung 3 EB | **.50 / .85 / .96** | -0.10 | 0.92 | 0.88 |
+| rung 4 | .52 / .85 / .97 | -0.12 | 0.92 | 0.84 |
+
+`z_mean` ~ 0 for all three: the RS-fit models' **average** playoff lineup
+value is roughly unbiased -- offense and defense both tighten in the playoffs,
+~cancelling in net rating, so there is no large systematic phase offset at the
+lineup-value level. But rung 2's bootstrap band is badly overconfident
+(`z_sd` 1.69; the 95% interval covers 75%), while **rung 3's empirical-Bayes
+posterior stays near-nominal out of phase**. This mirrors the in-sample
+structural-holdout finding and reinforces rung 3 as the reference baseline.
 
 ## Verdict against the contract
 
-- §11 rung-4 exit ("beat rung 2 on seen pairs"): **not met**, now confirmed at
-  proper power (668 pair groups) and with a placebo control.
-- §17.1 (chemistry-usefulness): the best interaction model does not improve on
-  the rung-3 baseline on macro unseen-lineup error — **still fails**.
-- §26 "successive models show no transferable interaction signal" + "split
-  sizes too small for reliable comparison": the first **applies**; the second
-  is now **resolved** — the pair-level test is adequately powered and the null
-  survives it.
+- The interaction question fails a fourth evaluation task: no interaction rung
+  beats additive talent on held-out playoff prediction, and the pair terms are
+  indistinguishable from a placebo. `RESEARCH_CONTRACT.md` sections 17.1 and 26
+  ("successive models show no transferable interaction signal") both stand.
+  **Fifth consecutive interaction null** (rung 5 low-rank; rung 3
+  calibration-only; rung 4 in-sample; rung 4 pair-level; rung 4 transport).
+- Rung 3's calibrated uncertainty **does** transport (near-nominal playoff
+  coverage) -- a modest positive result for the EB model's interval quality.
 
-**On 266k real regular-season stints, explicit teammate-pair chemistry adds no
-held-out predictive value over hierarchical additive talent — confirmed by a
-well-powered, placebo-controlled pair-level test, not just an underpowered
-lineup test.** Ladder rungs 0–5 are done on real data; rungs 3 (calibration),
-4 (explicit pairs), and 5 (low-rank) all fail the interaction question.
+## Roadmap -- the four directions (user: "do all of those")
 
-## Roadmap — the four directions (user: "do all of those")
-
-1. Report the "not supported" null — ongoing; every result is in these docs.
-2. **Better-powered pair evaluation — DONE (this task). Null confirmed.**
-3. **More / different data (NEXT)** — the 2024-25 playoffs archive is still
-   held out; a playoffs transport test (train RS, test PO) is the cleanest
-   remaining shot at interaction signal, plus more seasons and possession-level
-   rather than stint-level outcomes.
-4. A different interaction parameterization — role/skill-conditioned pair
-   effects (needs measured role features, master plan §21).
+1. **Report the "not supported" null -- NEXT.** Rungs 0-5 done on real data
+   across four leakage-safe evaluation tasks (three in-sample holdouts + phase
+   transport). Write it up as a standing findings document.
+2. Better-powered pair evaluation -- DONE (`chem_rung4_pairlevel_eval.json`).
+3. Playoffs transport -- DONE (this task).
+4. A different interaction parameterization -- role/skill-conditioned pair
+   effects (master plan section 21), **plus a new backlog item: quantify a
+   player's effect on *improving their teammates'* individual production**
+   (asymmetric "lift", not symmetric pair chemistry). To be appended to the
+   backlog.
 
 `ChemistryConfig` / `HierarchicalConfig` / `PairHierarchicalConfig` defaults
-unchanged. The 2024-25 playoffs archive is still held out.
+unchanged. No new data added; the playoff archive stays a held-out transport
+target (it has now been used once, for this test, and should not enter
+training).
 
 ## Next action
 
-Open the PR for `task/pair-level-eval` (done — do not merge without the user).
-On the user's go, start direction #3: the playoffs transport test.
+Merge `task/playoffs-transport` (the user asked). Then: write the interaction
+null findings document (direction #1). Then: scope the "player lifts teammates"
+backlog item.
