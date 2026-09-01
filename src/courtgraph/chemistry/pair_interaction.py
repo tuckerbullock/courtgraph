@@ -29,20 +29,14 @@ defensive pair term is a documented follow-up.
 from __future__ import annotations
 
 import math
-import warnings
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-from courtgraph.chemistry.baseline import (
-    AdditiveDecomposition,
-    _cross_ctx,
-    _cross_gram,
-    _cross_rhs,
-    _gather_sum,
-)
+from courtgraph.chemistry._augmented_em import fit_augmented_em
+from courtgraph.chemistry.baseline import AdditiveDecomposition, _gather_sum
 from courtgraph.chemistry.features import DesignMatrices, FeatureSpace
 from courtgraph.chemistry.stints import StintTable, pair_id
 
@@ -182,164 +176,37 @@ class PairHierarchicalRidge:
     ) -> PairHierarchicalRidge:
         cfg = config or PairHierarchicalConfig()
         space = feature_space
-        c = space.n_context
-        p = space.n_players
-        q = vocab.n_pairs
-        dim = c + 2 * p + q
-        o0, d0, g0 = c, c + p, c + 2 * p
 
         opair = build_offense_pair_index(design.offense_index, space, vocab)
-        w, y = design.weight, design.y
-        n = design.n_rows
-        context_weighted = design.context * w[:, None]
-
-        # normal equations for A = [context | +offense | -defense | +pairs]
-        gram = np.zeros((dim, dim), dtype=np.float64)
-        gram[:c, :c] = context_weighted.T @ design.context
-        g_oc = _cross_ctx(design.offense_index, context_weighted, p)
-        g_dc = _cross_ctx(design.defense_index, context_weighted, p)
-        g_gc = _cross_ctx(opair, context_weighted, q)
-        gram[:c, o0:d0] = g_oc.T
-        gram[o0:d0, :c] = g_oc
-        gram[:c, d0:g0] = -g_dc.T
-        gram[d0:g0, :c] = -g_dc
-        gram[:c, g0:] = g_gc.T
-        gram[g0:, :c] = g_gc
-        gram[o0:d0, o0:d0] = _cross_gram(
-            design.offense_index, design.offense_index, w, p, p
+        core = fit_augmented_em(
+            design,
+            space,
+            opair,
+            vocab.n_pairs,
+            tau_c2=cfg.tau_c2,
+            max_iters=cfg.max_iters,
+            tol=cfg.tol,
+            label="pair",
         )
-        gram[d0:g0, d0:g0] = _cross_gram(
-            design.defense_index, design.defense_index, w, p, p
-        )
-        gram[g0:, g0:] = _cross_gram(opair, opair, w, q, q)
-        g_od = _cross_gram(design.offense_index, design.defense_index, w, p, p)
-        gram[o0:d0, d0:g0] = -g_od
-        gram[d0:g0, o0:d0] = -g_od.T
-        g_og = _cross_gram(design.offense_index, opair, w, p, q)
-        gram[o0:d0, g0:] = g_og
-        gram[g0:, o0:d0] = g_og.T
-        g_dg = _cross_gram(design.defense_index, opair, w, p, q)
-        gram[d0:g0, g0:] = -g_dg
-        gram[g0:, d0:g0] = -g_dg.T
-
-        rhs = np.zeros(dim, dtype=np.float64)
-        rhs[:c] = context_weighted.T @ y
-        rhs[o0:d0] = _cross_rhs(design.offense_index, w * y, p)
-        rhs[d0:g0] = -_cross_rhs(design.defense_index, w * y, p)
-        rhs[g0:] = _cross_rhs(opair, w * y, q)
-
-        y_w_y = float((w * y**2).sum())
-        sum_log_w = float(np.log(w).sum())
-        inv_tau_c2 = 1.0 / cfg.tau_c2
-
-        tau_off2 = tau_def2 = tau_pair2 = 1.0
-        sigma2 = float(np.var(y)) or 1.0
-        prev = np.array(
-            [
-                math.log(tau_off2),
-                math.log(tau_def2),
-                math.log(tau_pair2),
-                math.log(sigma2),
-            ]
-        )
-        last_loglik = -np.inf
-        n_iters = 0
-        converged = False
-        chol = np.empty((dim, dim))
-        mu = np.zeros(dim)
-
-        def _lam(t_off: float, t_def: float, t_pair: float) -> FloatArray:
-            lam = np.empty(dim)
-            lam[:c] = inv_tau_c2
-            lam[o0:d0] = 1.0 / t_off
-            lam[d0:g0] = 1.0 / t_def
-            lam[g0:] = 1.0 / t_pair
-            return lam
-
-        for n_iters in range(1, cfg.max_iters + 1):
-            lam = _lam(tau_off2, tau_def2, tau_pair2)
-            m = gram / sigma2
-            m[np.diag_indices(dim)] += lam
-            chol = np.asarray(np.linalg.cholesky(m), dtype=np.float64)
-            mu = np.linalg.solve(chol.T, np.linalg.solve(chol, rhs / sigma2))
-            chol_inv = np.linalg.solve(chol, np.eye(dim))
-            v_diag = np.einsum("ij,ij->j", chol_inv, chol_inv)
-
-            mu_a, mu_b, mu_g = mu[o0:d0], mu[d0:g0], mu[g0:]
-            new_off = float(mu_a @ mu_a + v_diag[o0:d0].sum()) / p
-            new_def = float(mu_b @ mu_b + v_diag[d0:g0].sum()) / p
-            new_pair = float(mu_g @ mu_g + v_diag[g0:].sum()) / q if q else tau_pair2
-
-            y_hat = (
-                design.context @ mu[:c]
-                + _gather_sum(mu_a, design.offense_index)
-                - _gather_sum(mu_b, design.defense_index)
-                + _gather_sum(mu_g, opair)
-            )
-            rss = float((w * (y - y_hat) ** 2).sum())
-            trace_term = sigma2 * (dim - float((lam * v_diag).sum()))
-            new_sigma2 = (rss + trace_term) / n
-
-            logdet_m = 2.0 * float(np.log(np.diag(chol)).sum())
-            logdet_sigma = (
-                n * math.log(sigma2) - sum_log_w - float(np.log(lam).sum()) + logdet_m
-            )
-            quad = y_w_y / sigma2 - float(rhs @ mu) / sigma2
-            loglik = -0.5 * (n * math.log(2.0 * math.pi) + logdet_sigma + quad)
-            if loglik + 1e-6 < last_loglik:
-                warnings.warn(
-                    f"pair EM log-likelihood decreased at iter {n_iters}: "
-                    f"{last_loglik:.6f} -> {loglik:.6f}",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-            last_loglik = loglik
-
-            tau_off2, tau_def2, tau_pair2, sigma2 = (
-                new_off,
-                new_def,
-                new_pair,
-                new_sigma2,
-            )
-            cur = np.array(
-                [
-                    math.log(tau_off2),
-                    math.log(tau_def2),
-                    math.log(tau_pair2),
-                    math.log(sigma2),
-                ]
-            )
-            if float(np.max(np.abs(cur - prev))) < cfg.tol:
-                converged = True
-                prev = cur
-                break
-            prev = cur
-
-        lam = _lam(tau_off2, tau_def2, tau_pair2)
-        m = gram / sigma2
-        m[np.diag_indices(dim)] += lam
-        chol = np.asarray(np.linalg.cholesky(m), dtype=np.float64)
-        mu = np.linalg.solve(chol.T, np.linalg.solve(chol, rhs / sigma2))
-
         return cls(
             feature_space=space,
             vocab=vocab,
-            context_coef=np.asarray(mu[:c], dtype=np.float64),
-            offense_coef=np.asarray(mu[o0:d0], dtype=np.float64),
-            defense_coef=np.asarray(mu[d0:g0], dtype=np.float64),
-            pair_coef=np.asarray(mu[g0:], dtype=np.float64),
-            sigma2=float(sigma2),
-            tau_off2=float(tau_off2),
-            tau_def2=float(tau_def2),
-            tau_pair2=float(tau_pair2),
-            tau_c2=float(cfg.tau_c2),
-            n_iters=int(n_iters),
-            converged=bool(converged),
-            final_loglik=float(last_loglik),
-            n_obs=int(n),
-            gram=gram,
-            rhs=rhs,
-            chol=chol,
+            context_coef=core.context_coef,
+            offense_coef=core.offense_coef,
+            defense_coef=core.defense_coef,
+            pair_coef=core.extra_coef,
+            sigma2=core.sigma2,
+            tau_off2=core.tau_off2,
+            tau_def2=core.tau_def2,
+            tau_pair2=core.tau_extra2,
+            tau_c2=core.tau_c2,
+            n_iters=core.n_iters,
+            converged=core.converged,
+            final_loglik=core.final_loglik,
+            n_obs=core.n_obs,
+            gram=core.gram,
+            rhs=core.rhs,
+            chol=core.chol,
         )
 
     # -- prediction ------------------------------------------------------------
