@@ -157,54 +157,82 @@ def _gather_sum(coef: FloatArray, index: NDArray[np.int64]) -> FloatArray:
     return np.asarray(gathered.sum(axis=1), dtype=np.float64)
 
 
+def _cross_gram(
+    ix: NDArray[np.int64],
+    jx: NDArray[np.int64],
+    w: FloatArray,
+    dim_i: int,
+    dim_j: int,
+) -> FloatArray:
+    """``(dim_i, dim_j)`` block: entry (i, j) = sum of ``w`` over rows with i in
+    ``ix`` and j in ``jx``. This is ``Ixᵀ (w ⊙) Jx`` for the two 0/1 one-hots,
+    built by scattering the ``k_i · k_j`` index pairs per row -- O(n · k_i · k_j),
+    never an ``(n, dim)`` intermediate. ``-1`` in either index contributes 0.
+    """
+
+    n, k_i = ix.shape
+    k_j = jx.shape[1]
+    bi = np.broadcast_to(ix[:, :, None], (n, k_i, k_j))
+    bj = np.broadcast_to(jx[:, None, :], (n, k_i, k_j))
+    ok = (bi >= 0) & (bj >= 0)
+    lin = np.where(ok, bi * dim_j + bj, 0).ravel()
+    weights = np.broadcast_to(w[:, None, None], (n, k_i, k_j)).astype(
+        np.float64, copy=True
+    )
+    weights[~ok] = 0.0
+    flat = np.bincount(lin, weights=weights.ravel(), minlength=dim_i * dim_j)
+    return np.asarray(flat.reshape(dim_i, dim_j), dtype=np.float64)
+
+
+def _cross_ctx(
+    ix: NDArray[np.int64], context_weighted: FloatArray, dim_i: int
+) -> FloatArray:
+    """``(dim_i, n_context)`` block: row i = sum over rows containing i of
+    ``weight ⊙ context[row]``. Column loop keeps the transient at O(n · k)."""
+
+    k = ix.shape[1]
+    flat = ix.ravel()
+    seen = flat >= 0
+    kept = flat[seen]
+    out = np.zeros((dim_i, context_weighted.shape[1]), dtype=np.float64)
+    for c in range(context_weighted.shape[1]):
+        column = np.repeat(context_weighted[:, c], k)[seen]
+        out[:, c] = np.bincount(kept, weights=column, minlength=dim_i)
+    return out
+
+
+def _cross_rhs(
+    ix: NDArray[np.int64], row_values: FloatArray, dim_i: int
+) -> FloatArray:
+    """``(dim_i,)`` vector: entry i = sum of ``row_values`` over rows containing i."""
+
+    k = ix.shape[1]
+    flat = ix.ravel()
+    seen = flat >= 0
+    return np.asarray(
+        np.bincount(
+            flat[seen], weights=np.repeat(row_values, k)[seen], minlength=dim_i
+        ),
+        dtype=np.float64,
+    )
+
+
 def _pair_gram(
     ix: NDArray[np.int64], jx: NDArray[np.int64], w: FloatArray, n_players: int
 ) -> FloatArray:
-    """(P, P) block: entry (i, j) = sum of ``w`` over rows with i in ``ix`` and
-    j in ``jx``. This is ``Ixᵀ (w ⊙) Jx`` for the two 0/1 one-hots, built by
-    scattering the 25 (i, j) index pairs per row -- O(n · 25), not O(n · P²).
-    """
-
-    n = ix.shape[0]
-    bi = np.broadcast_to(ix[:, :, None], (n, 5, 5))
-    bj = np.broadcast_to(jx[:, None, :], (n, 5, 5))
-    ok = (bi >= 0) & (bj >= 0)
-    lin = np.where(ok, bi * n_players + bj, 0).ravel()
-    weights = np.broadcast_to(w[:, None, None], (n, 5, 5)).astype(np.float64, copy=True)
-    weights[~ok] = 0.0
-    flat = np.bincount(lin, weights=weights.ravel(), minlength=n_players * n_players)
-    return np.asarray(flat.reshape(n_players, n_players), dtype=np.float64)
+    return _cross_gram(ix, jx, w, n_players, n_players)
 
 
 def _ctx_gram(
     ix: NDArray[np.int64], context_weighted: FloatArray, n_players: int
 ) -> FloatArray:
-    """(P, n_context) block: row j = sum over rows containing j of
-    ``weight ⊙ context[row]``. Column loop keeps the transient at O(n · 5)."""
-
-    flat = ix.ravel()
-    seen = flat >= 0
-    kept = flat[seen]
-    out = np.zeros((n_players, context_weighted.shape[1]), dtype=np.float64)
-    for c in range(context_weighted.shape[1]):
-        column = np.repeat(context_weighted[:, c], 5)[seen]
-        out[:, c] = np.bincount(kept, weights=column, minlength=n_players)
-    return out
+    return _cross_ctx(ix, context_weighted, n_players)
 
 
 def _idx_rhs(
     ix: NDArray[np.int64], row_values: FloatArray, n_players: int
 ) -> FloatArray:
-    """(P,) vector: entry j = sum of ``row_values`` over rows containing j."""
-
-    flat = ix.ravel()
-    seen = flat >= 0
-    return np.asarray(
-        np.bincount(
-            flat[seen], weights=np.repeat(row_values, 5)[seen], minlength=n_players
-        ),
-        dtype=np.float64,
-    )
+    return _cross_rhs(ix, row_values, n_players)
 
 
 def _normal_equations(
