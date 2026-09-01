@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-31 (five regular NBA seasons ingested)
+Last updated: 2026-09-01 (pair-level rung-4 evaluation)
 
 ## Current phase
 
@@ -126,14 +126,19 @@ feed), not an independent lineage. No demonstrated betting edge exists.
     2 or 3** on the widened holdouts: macro RMSE 3.843 / 19.222 / 5.495
     (chronological / unseen-pair / unseen-lineup) vs rung 3's 3.551 / 19.203 /
     5.256, and its calibration is no better. The §11 exit test ("beat rung 2 on
-    seen pairs") is not met (47.46 vs 47.28, over only 209 fully-pair-covered
-    lineups — also underpowered). Third consecutive null for non-additive
-    lineup structure on this data; `RESEARCH_CONTRACT.md` §26's "successive
-    models show no transferable interaction signal" applies. Numbers in
-    `docs/CURRENT_TASK.md`.
-  - Next is a strategic fork (`docs/CURRENT_TASK.md`): report the null; or a
-    better-powered pair evaluation; or more / different data; or a
-    role-conditioned interaction parameterization.
+    seen pairs") is not met. Numbers in `docs/CURRENT_TASK.md`.
+  - **Better-powered pair evaluation (roadmap direction #2)** — a pair-level
+    "seen pairs" exit test (macro RMSE over 668 admitted pairs recurring in the
+    held-out window, vs the old 209 all-pairs-covered lineups) with a
+    placebo-pair control. **The rung-4 null holds at proper power**: rung 2
+    8.669 → rung 4 8.543, but the placebo (same parameter count, scrambled
+    pair→row wiring) is 8.541 — the tiny gain is added-parameter noise
+    absorption, not chemistry. §26's "split sizes too small" concern is now
+    resolved; the null survives an adequately powered test. Fourth consecutive
+    null for non-additive lineup structure on this data.
+  - Next (roadmap direction #3): more / different data — a playoffs transport
+    test (train RS, test the held-out 2024-25 playoffs), more seasons, or
+    possession-level outcomes. See `docs/CURRENT_TASK.md`.
 
 ## Not started
 - Recovering the 840 quarantined regular-season games (503 `network_required`,
@@ -174,7 +179,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 189 unit tests, Ruff, mypy over 53 source
+The current implementation passes 190 unit tests, Ruff, mypy over 53 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
 --ingest-dir`) on the local five-season regular-season archive: 6,000 games
@@ -195,13 +200,14 @@ Ladder rungs 0–5 have been fit and evaluated on the 266k real regular-season
 stints against the widened holdouts (`docs/CURRENT_TASK.md`). Rung 3
 (hierarchical EB) is the reference baseline and out-calibrates rung 2 on the
 structural holdouts. **Neither interaction rung beats it**: rung 5 (low-rank)
-and rung 4 (explicit pairs) both fail to improve held-out prediction, and
-`RESEARCH_CONTRACT.md` §26's "successive models show no transferable interaction
-signal" now applies. The next step is a strategic decision recorded in
-`docs/CURRENT_TASK.md`: report the "not supported" finding for transferable
-pair/lineup chemistry; or a better-powered pair evaluation; or more / different
-data; or a role-conditioned interaction parameterization. Neural rungs 6–7 stay
-gated — the interaction question has not passed at rungs 0–5.
+and rung 4 (explicit pairs) both fail to improve held-out prediction. The
+rung-4 null now survives a well-powered, placebo-controlled pair-level exit
+test (668 pair groups), so `RESEARCH_CONTRACT.md` §26's "successive models show
+no transferable interaction signal" applies and its "split sizes too small"
+caveat is resolved. Remaining shots (`docs/CURRENT_TASK.md`): a playoffs
+transport test and more / different data (direction #3); a role-conditioned
+interaction parameterization (direction #4). Neural rungs 6–7 stay gated — the
+interaction question has not passed at rungs 0–5.
 
 ## Governing document
 

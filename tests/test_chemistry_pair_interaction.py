@@ -245,6 +245,33 @@ class PairHierarchicalRidgeTests(unittest.TestCase):
         )
         self.assertAlmostEqual(d.talent - add_only, contrib, places=6)
 
+    def test_placebo_vocab_is_a_real_non_injective_control(self) -> None:
+        import numpy as np
+
+        from courtgraph.chemistry.baseline_ladder import _placebo_vocab
+        from courtgraph.chemistry.pair_interaction import (
+            PairHierarchicalConfig,
+            PairHierarchicalRidge,
+        )
+
+        placebo = _placebo_vocab(self.vocab, seed=0)
+        self.assertEqual(placebo.pair_ids, self.vocab.pair_ids)
+        assert placebo.row_override is not None
+        # drawn with replacement -> distinct pairs collide onto shared rows
+        self.assertLess(len(set(placebo.row_override)), self.vocab.n_pairs)
+
+        fit = PairHierarchicalRidge.fit(
+            self.design,
+            self.space,
+            placebo,
+            config=PairHierarchicalConfig(tol=1e-6, max_iters=100),
+        )
+        # the placebo cannot reproduce the real per-pair coefficients: its
+        # in-sample fit to the planted signal is materially worse
+        real_rss = float(np.sum(self.model.residuals(self.design) ** 2))
+        placebo_rss = float(np.sum(fit.residuals(self.design) ** 2))
+        self.assertGreater(placebo_rss, real_rss * 1.05)
+
     def test_is_deterministic_and_round_trips(self) -> None:
         import numpy as np
 

@@ -275,6 +275,8 @@ class ChemistryCommandTests(unittest.TestCase):
         chron = next(h for h in payload["holdouts"] if h["kind"] == "chronological")
         self.assertIn("rung4_pair_covered", chron)
         self.assertIn("rung4_pair_degraded", chron)
+        self.assertIn("rung4_pair_level", chron)
+        self.assertIn("n_pair_groups", chron["rung4_pair_level"])
 
     def test_baselines_rejects_negative_bootstrap(self) -> None:
         code = main(

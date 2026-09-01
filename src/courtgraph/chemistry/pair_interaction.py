@@ -72,6 +72,12 @@ class PairVocabulary:
     pair_ids: tuple[str, ...]
     min_co_stints: int
     _index: dict[str, int]
+    # Optional positional remap ``pair_ids[i] -> coefficient row``. ``None`` is
+    # the identity. Used only by the placebo control in ``baseline_ladder``:
+    # a non-injective override collapses distinct pairs onto shared rows,
+    # breaking pair-specific signal while keeping the parameter count and total
+    # pair exposure fixed.
+    row_override: tuple[int, ...] | None = None
 
     @property
     def n_pairs(self) -> int:
@@ -122,13 +128,14 @@ def build_offense_pair_index(
     p = feature_space.n_players
     # dense (n_players+1)^2 lookup: (pos_lo, pos_hi) -> admitted pair row
     lookup = np.full((p + 1) * (p + 1), -1, dtype=np.int64)
+    override = vocab.row_override
     for row, key in enumerate(vocab.pair_ids):
         a_id, b_id = (int(x) for x in key.split("-"))
         ia, ib = pos_of.get(a_id, -1), pos_of.get(b_id, -1)
         if ia < 0 or ib < 0:
             continue
         lo, hi = (ia, ib) if ia < ib else (ib, ia)
-        lookup[lo * (p + 1) + hi] = row
+        lookup[lo * (p + 1) + hi] = override[row] if override is not None else row
 
     out = np.full((n, 10), -1, dtype=np.int64)
     for k, (a, b) in enumerate(_SLOT_PAIRS):

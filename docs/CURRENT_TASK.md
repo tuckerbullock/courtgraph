@@ -4,116 +4,100 @@ Last updated: 2026-09-01
 
 ## State
 
-Done — **model-ladder rung 4 (explicit teammate-pair interaction RAPM) built,
-tested, and run against rungs 2 & 3 on the 266k real regular-season stints.**
-Branch `task/rung4-pair-interaction` off `origin/main` (`f328a10`). Committed
-and pushed, PR open.
+Done — **better-powered pair-interaction evaluation (roadmap direction #2)
+built, tested, and run on the 266k real regular-season stints.** Branch
+`task/pair-level-eval` off `main` (`b57376c`). Committed, PR open, **not merged**.
 
-**Result: rung 4 does not clear its contract exit criterion — it does not beat
-rung 2 "on seen pairs" (§11), and it is worse than the rung-3 hierarchical
-baseline on macro RMSE on two of three holdouts.** This is the **third
-consecutive null** for non-additive lineup structure on this data (rung 5
-low-rank: no gain; rung 3 hierarchical: calibration only; rung 4 explicit pairs:
-no gain). `RESEARCH_CONTRACT.md` §26's "successive models show no transferable
-interaction signal" stop condition now applies. All results preserved.
+**Result: the rung-4 null holds at proper statistical power.** A pair-level
+"seen pairs" exit test over 668 recurring admitted pairs (vs the old 209
+all-pairs-covered lineups), with a placebo control, shows rung 4's tiny edge
+over rung 2 is **entirely reproduced by randomly-wired pair parameters** — it
+is not pair-specific chemistry signal. Fourth consecutive null for
+non-additive lineup structure on this data. All results preserved.
 
-## What was built (`e6e386c`, `450124d`, `81b5b89`)
+## What was built (`d4559ce`)
 
-- **`src/courtgraph/chemistry/pair_interaction.py`** — `PairHierarchicalRidge`:
-  the rung-3 EB model plus an explicit `γ_ij` term per admitted offensive
-  teammate pair (`γ_ij ~ N(0, τ_pair²)`, a third EM-learned variance component).
-  `PairVocabulary.from_training(table, min_co_stints=200)` admits only pairs
-  with enough shared training stints (master plan §15.3; also keeps the
-  `(n_context + 2P + Q)` linear system tractable — ~2.3–3.7k pairs per fold, not
-  ~20k). A lineup with an inadmissible pair degrades to the additive prediction
-  for that term. Offense pairs only for v1.
-- `baseline._cross_gram` / `_cross_ctx` / `_cross_rhs` generalized to arbitrary
-  block dimensions (the old 5-slot helpers are now the special case;
-  behavior-preserving, `SparseGramEquivalenceTests` unchanged).
-- `courtgraph baselines --rung4` — opt-in 3-way comparison;
-  `compare_rungs(rung4_config=…)`. The §11 exit test lives in
-  `rung4_pair_covered` on the chronological holdout: lineups where **every**
-  offense pair is admitted, rung 2 vs rung 4 macro RMSE.
-- Validated: `τ_pair` recovered to ~3% and pair coefs correlate 0.94 with a
-  planted-`γ` fixture; monotone EM; deterministic; inadmissible pair → exactly
-  `0.0` surplus + additive fallback. 189 tests; ruff / mypy / dep-free clean.
+- **`_pair_level_breakdown`** (`baseline_ladder.py`) — the rung-4 §11 exit test,
+  re-cast from lineup-level to pair-level. Buckets held-out chronological stints
+  by each admitted offensive pair; macro RMSE over every pair recurring in the
+  test window (>= 5 test stints). 668 pair groups on the real data, vs 209
+  all-10-pairs-covered lineups for the old test — properly powered.
+- **`_placebo_vocab`** + `PairVocabulary.row_override` — a real control. Routes
+  each admitted pair's stints to a randomly chosen coefficient row drawn **with
+  replacement**: same parameter count, same total pair exposure, but distinct
+  pairs collide onto shared rows so the fit cannot carry pair-specific signal.
+  (The version sketched earlier — permuting pair -> row — was a no-op: the model
+  is exactly permutation-invariant. Verified `mean|pred - placebo_pred| = 0`
+  before the fix.) Validated on a planted-`γ` synthetic: real rung 4 macro RMSE
+  **0.61** vs placebo **1.16** vs rung 2 **1.87**; with no planted pair signal
+  all three collapse to ~**0.50** and `τ_pair -> ~0.15`. The test discriminates.
+- `courtgraph baselines --rung4` human output now prints the pair-level line
+  (`r2 / r4 / r4-placebo`); JSON gains `rung4_pair_level`, keeps the
+  lineup-level `rung4_pair_covered` / `_degraded` fields.
+- 191 tests; ruff / format / mypy / dependency-free path clean.
 
-## Result — rungs 2 / 3 / 4 on the 266k real stints (~70 min)
+## Result — pair-level exit test on the 266k real stints
 
 `courtgraph baselines --input …/rs_2020_2024/out/stints.jsonl --bootstrap 120
---rung4`. Result: `data/nba_snapshots/rs_2020_2024/chem_rung4_eval.json`
-(gitignored).
+--rung4`. Result: `data/nba_snapshots/rs_2020_2024/chem_rung4_pairlevel_eval.json`
+(gitignored). Chronological holdout, 2,357 admitted pairs (>= 200 train
+co-stints), rung-3 EM converged in 78 iters.
 
-**Held-out macro RMSE** (possession-weighted group means, points per 100):
+**Pair-level "seen pairs" test** (macro RMSE over 668 admitted pairs recurring
+in the held-out window, points per 100):
 
-| holdout | groups | rung 2 | rung 3 | rung 4 | rung 4 admitted pairs |
-|---|---|---|---|---|---|
-| chronological | 13 | 3.705 | **3.551** | 3.843 | 2,357 |
-| unseen_pair | 40 | 19.568 | **19.203** | 19.222 | 3,286 |
-| unseen_lineup | 60 | 5.383 | **5.256** | 5.495 | 3,690 |
-
-Rung 4 is **worse than rung 3 on all three** and worse than rung 2 on
-chronological and unseen-lineup. The explicit per-pair terms, even EM-shrunk,
-add estimation variance without a compensating signal.
-
-**Calibration** (rung 4's Gaussian posterior, `z_sd` ideal 1.0):
-
-| holdout | rung 4 `z_sd` / slope / cov 50·80·95 |
+| | macro RMSE over 668 pair groups |
 |---|---|
-| chronological | 1.62 / −0.52 / .15·.15·.23 |
-| unseen_pair | 1.06 / 1.02 / .43·.70·.90 |
-| unseen_lineup | 1.02 / 0.63 / .48·.70·.95 |
+| rung 2 (additive ridge) | 8.669 |
+| rung 4 (explicit `γ_ij`) | 8.543 |
+| **rung 4, placebo pairs** | **8.541** |
 
-Essentially identical to rung 3's calibration (1.76 / 1.06 / 1.04 `z_sd`). No
-improvement.
+Rung 4 is 1.5% better than rung 2 — and the placebo (same parameter count,
+scrambled pair->row wiring) is **exactly as good** (a hair better). The small
+rung-2 -> rung-4 gain is added-parameter noise absorption, **not** teammate
+chemistry. Exit test **not met**: rung 4 does not beat rung 2 on seen pairs in
+any way the placebo doesn't.
 
-**The exit test — "beat rung 2 on seen pairs"** (chronological holdout,
-lineups where every offense pair is admitted):
+For reference, the underpowered lineup-level test from the rung-4 task
+(unchanged here): 209 all-pairs-covered lineups, rung 2 47.28 vs rung 4 47.46.
+Same direction.
 
-| bucket | lineups | rung 2 macro RMSE | rung 4 macro RMSE |
-|---|---|---|---|
-| pair-covered (the exit test) | **209** | 47.277 | **47.460** |
-| pair-degraded | 27,093 | 62.807 | 62.448 |
-
-Rung 4 is a hair **worse** on the covered subset. **Exit test not met.** Also a
-§26 "split sizes too small" issue: requiring all 10 of a lineup's pairs at
-≥200 co-stints leaves only 209 of 27,302 chronological-test lineups (RMSE ~47
-over 209 noisy group means). A pair-level exit test (per admitted pair, does
-`γ_ij` reduce that pair's held-out residual vs rung 2?) would be better powered
-— a follow-up — but the direction is unambiguous.
+**Macro RMSE / calibration on the widened holdouts** — identical to the rung-4
+run (deterministic): rung 4 3.843 / 19.222 / 5.495 vs rung 3 3.551 / 19.203 /
+5.256; rung 4 calibration no better than rung 3.
 
 ## Verdict against the contract
 
-- §11 rung-4 exit ("beat rung 2 on seen pairs"): **not met.**
-- §17.1 (chemistry-usefulness): "the best interaction model (rung 4–7) shows a
-  significant improvement over the rung-3 baseline on macro unseen-lineup
-  error" — **fails**: rung 4 = 5.495 vs rung 3 = 5.256; rung 5 (low-rank,
-  earlier run) also did not beat rung 3.
-- §26 stop condition "successive models show no transferable interaction
-  signal": **applies.** Rungs 4 and 5 both fail to beat the additive/hierarchical
-  baseline on the interaction question.
+- §11 rung-4 exit ("beat rung 2 on seen pairs"): **not met**, now confirmed at
+  proper power (668 pair groups) and with a placebo control.
+- §17.1 (chemistry-usefulness): the best interaction model does not improve on
+  the rung-3 baseline on macro unseen-lineup error — **still fails**.
+- §26 "successive models show no transferable interaction signal" + "split
+  sizes too small for reliable comparison": the first **applies**; the second
+  is now **resolved** — the pair-level test is adequately powered and the null
+  survives it.
 
-**On 266k real regular-season stints, explicit teammate-pair chemistry — as
-measured by free per-pair terms and by low-rank factorization — adds no
-held-out predictive value over hierarchical additive talent.** This does not
-prove chemistry doesn't exist; it means the modeled forms of it, at this data
-scale, on this evaluation, find nothing — consistent with the literature that
-lineup non-additivity is a small residual.
+**On 266k real regular-season stints, explicit teammate-pair chemistry adds no
+held-out predictive value over hierarchical additive talent — confirmed by a
+well-powered, placebo-controlled pair-level test, not just an underpowered
+lineup test.** Ladder rungs 0–5 are done on real data; rungs 3 (calibration),
+4 (explicit pairs), and 5 (low-rank) all fail the interaction question.
 
-## Next — a strategic fork (not started)
+## Roadmap — the four directions (user: "do all of those")
 
-1. **Report the null.** Rungs 0–5 of the ladder are done on real data; the
-   honest finding is "not supported" for transferable pair/lineup chemistry in
-   the 2020-21…2024-25 regular season. Write it up (contract §17: null and
-   inconclusive results are reported, not hidden).
-2. **Better-powered pair evaluation** — a pair-level (not lineup-level) seen-pair
-   test; a lower co-stint threshold; rolling-origin folds.
-3. **More / different data** — playoffs (held out); more seasons; possession-
-   level rather than stint-level outcomes.
-4. **A different interaction parameterization** — role/skill-conditioned pair
-   effects (needs measured role features, master plan §21), or the master-plan
-   rung 6–7 neural pathways (gated on rungs 0–5 passing, which they have not for
-   the interaction question).
+1. Report the "not supported" null — ongoing; every result is in these docs.
+2. **Better-powered pair evaluation — DONE (this task). Null confirmed.**
+3. **More / different data (NEXT)** — the 2024-25 playoffs archive is still
+   held out; a playoffs transport test (train RS, test PO) is the cleanest
+   remaining shot at interaction signal, plus more seasons and possession-level
+   rather than stint-level outcomes.
+4. A different interaction parameterization — role/skill-conditioned pair
+   effects (needs measured role features, master plan §21).
 
-`ChemistryConfig` / `HierarchicalConfig` defaults unchanged. The 2024-25
-playoffs archive is still held out.
+`ChemistryConfig` / `HierarchicalConfig` / `PairHierarchicalConfig` defaults
+unchanged. The 2024-25 playoffs archive is still held out.
+
+## Next action
+
+Open the PR for `task/pair-level-eval` (done — do not merge without the user).
+On the user's go, start direction #3: the playoffs transport test.
