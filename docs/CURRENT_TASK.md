@@ -6,7 +6,7 @@ Last updated: 2026-09-01
 
 Done — **playoffs transport test (roadmap direction #3) built, tested, and run
 on the 266k RS stints -> the held-out 2024-25 playoffs (3,325 stints).** Branch
-`task/playoffs-transport` off `main` (`653c734`). Committed; PR open.
+`task/playoffs-transport` off `main` (`653c734`), merged via PR #18 (`c72ee3b`).
 
 **Result: the interaction null holds under phase transport too -- a fifth
 consecutive null.** But rung 3's empirical-Bayes predictive intervals
@@ -130,8 +130,62 @@ unchanged. No new data added; the playoff archive stays a held-out transport
 target (it has now been used once, for this test, and should not enter
 training).
 
+## Candidate follow-up ideas (2026-09-01, not yet selected — need user go-ahead)
+
+Discussed with the user in a conceptual (non-coding) session, in response to
+four consecutive interaction-signal nulls. Not started; do not begin any of
+these without the user explicitly picking one as the active task, per the
+one-task rule in `AGENTS.md`.
+
+1. **Role/skill-conditioned interaction terms (elevate direction #4).** The
+   rung-4 pair term is keyed by raw player identity, so most admitted pairs
+   have thin co-stint counts and the test is underpowered by construction even
+   with placebo controls. Conditioning the interaction term on measured
+   role/skill features (usage rate, 3PT rate, assist rate, defensive
+   role/position) instead of identity pools evidence across many pairs sharing
+   a profile (e.g. "two low-usage shooters" vs "two ball-dominant guards"),
+   which is a materially more powerful test than per-identity pairs. Master
+   plan §21.5 already sketches role modeling; this task would need to define
+   the role features, wire them into a `PairHierarchicalRidge`-style model,
+   and re-run the same leakage-safe + placebo-controlled evaluation used for
+   rung 4.
+2. **Mechanistic outcome variables instead of points-per-100.** Points/100 is
+   a highly aggregated, noisy target that may wash out real but small
+   mechanical effects. Candidates: shot-quality / shot-location shift
+   (spacing), turnover rate, assist rate, or defensive-matchup redundancy
+   (who guards whom). Needs source data support (shot-location and matchup
+   data are not yet in the ingested schema) — a data-availability check
+   should precede any modeling work here.
+3. **Test for anti-synergy (redundancy), not just positive synergy.** Skill
+   redundancy (two non-shooters, two ball-dominant creators, overlapping
+   defensive assignments) is a more mechanically direct effect and may be
+   easier to detect than positive fit. Could reuse the existing rung-4/5
+   machinery with a redundancy feature as the interaction predictor instead
+   of a free per-pair parameter.
+4. **Playoffs transport test — DONE** (roadmap direction #3, PR #18, `c72ee3b`,
+   merged while this note was being written). Fifth consecutive interaction
+   null; rung 4 pair terms did not transport RS -> playoffs and were
+   indistinguishable from their placebo. One positive side result: rung 3's
+   empirical-Bayes intervals stayed near-nominal out of phase where rung 2's
+   bootstrap band did not. See the "Result -- 266k RS -> 2024-25 playoffs"
+   section above for numbers.
+5. **Transaction backtest (T4 in the research contract) as a causal check.**
+   Everything run so far is purely observational combinatorics. Using real
+   trades/injuries as natural experiments (did team performance move the
+   direction the model predicted once a specific player left/arrived) is a
+   causal-flavored test and the project's eventual gold-standard evidence bar
+   — higher build cost than the others, but the strongest evidence if it
+   works.
+
+Suggested priority if the user wants to pursue one next (#4 is now done, see
+above): #1 (role-conditioned interaction) for the best shot at real signal,
+then #2 (mechanistic outcomes), then #5 (transaction backtest, highest
+cost/highest evidentiary value).
+
 ## Next action
 
-Merge `task/playoffs-transport` (the user asked). Then: write the interaction
-null findings document (direction #1). Then: scope the "player lifts teammates"
-backlog item.
+`task/playoffs-transport` is merged (PR #18). Documented next steps, in order:
+write the interaction-null findings document (roadmap direction #1); scope the
+"player lifts teammates" asymmetric-effect backlog item (roadmap item #4); on
+the user's go, start one of the candidate ideas above — confirm which with the
+user before starting, do not pick automatically.
