@@ -141,6 +141,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     transport.add_argument("--json", action="store_true", help="print result as JSON")
 
+    player_features = subparsers.add_parser(
+        "player-features",
+        help="derive per-(player, season) role/skill profiles from a snapshot "
+        "and a stint file (usage, shot profile, playmaking, turnover rate)",
+    )
+    player_features.add_argument(
+        "--snapshot-dir",
+        type=Path,
+        required=True,
+        help="stats_nba_pbpstats/v1 snapshot directory (read-only)",
+    )
+    player_features.add_argument(
+        "--stints",
+        type=Path,
+        required=True,
+        help="stint file whose games / possessions set the exposure denominator",
+    )
+    player_features.add_argument(
+        "--out", type=Path, required=True, help="write profiles.jsonl here"
+    )
+    player_features.add_argument(
+        "--min-possessions",
+        type=int,
+        default=200,
+        help="on-court offensive possessions below which per-possession rates "
+        "are left null (default 200)",
+    )
+    player_features.add_argument(
+        "--json", action="store_true", help="also print a summary as JSON"
+    )
+
     ingest = subparsers.add_parser(
         "ingest",
         help="convert an offline NBA snapshot into validated stint records",
@@ -557,6 +588,52 @@ def _cmd_transport(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_player_features(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.features.player_season import (
+        build_from_paths,
+        write_player_profiles,
+    )
+    from courtgraph.ingest.snapshot import SnapshotError
+
+    if args.min_possessions < 0:
+        print("player-features: --min-possessions must be >= 0", file=stream)
+        return 2
+    try:
+        profiles = build_from_paths(
+            args.snapshot_dir,
+            args.stints,
+            min_off_possessions=args.min_possessions,
+        )
+    except (SnapshotError, FileNotFoundError, OSError) as exc:
+        print(f"player-features: {exc}", file=stream)
+        return 2
+
+    write_player_profiles(profiles, args.out)
+    with_rates = sum(1 for p in profiles if p.usage is not None)
+    seasons = sorted({p.season for p in profiles})
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "profiles": len(profiles),
+                    "with_rates": with_rates,
+                    "seasons": seasons,
+                    "out": str(args.out),
+                },
+                indent=2,
+            ),
+            file=stream,
+        )
+    else:
+        print(
+            f"player-features: {len(profiles)} (player, season) profiles "
+            f"({with_rates} above the {args.min_possessions}-possession floor) "
+            f"across {len(seasons)} season(s) -> {args.out}",
+            file=stream,
+        )
+    return 0
+
+
 def _cmd_ingest(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.ingest.pipeline import run_ingest
     from courtgraph.ingest.policy import IngestPolicy
@@ -715,6 +792,7 @@ _COMMANDS = {
     "fit": _cmd_fit,
     "baselines": _cmd_baselines,
     "transport": _cmd_transport,
+    "player-features": _cmd_player_features,
     "predict": _cmd_predict,
 }
 
