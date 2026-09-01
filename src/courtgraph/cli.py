@@ -410,21 +410,22 @@ def _cmd_baselines(args: argparse.Namespace, stream: TextIO) -> int:
             f"{cal['coverage_95']:.2f}   {cal['slope']:>8.2f}"
         )
         print(line, file=stream)
-        if r4 and h.rung4_pair_covered is not None:
-            cov = h.rung4_pair_covered
-            deg = h.rung4_pair_degraded or {}
-            n_cov = int(cov.get("n_groups", 0))
-            scores = (
-                f"r2={cov['rung2_macro_rmse']:.3f} r4={cov['rung4_macro_rmse']:.3f}"
-                if n_cov
-                else "no fully-covered lineups"
-            )
-            print(
-                f"    seen-pairs (rung-4 exit test): {scores} "
-                f"({n_cov} lineups); pair-degraded {int(deg.get('n_groups', 0))} "
-                "lineups",
-                file=stream,
-            )
+        if r4 and h.rung4_pair_level is not None:
+            pl = h.rung4_pair_level
+            n_pg = int(pl.get("n_pair_groups", 0))
+            if n_pg:
+                print(
+                    f"    seen-pairs (pair-level exit test, {n_pg} pairs): "
+                    f"r2={pl['rung2_macro_rmse']:.3f}  "
+                    f"r4={pl['rung4_macro_rmse']:.3f}  "
+                    f"r4-placebo={pl['rung4_placebo_macro_rmse']:.3f}",
+                    file=stream,
+                )
+            else:
+                print(
+                    "    seen-pairs: no admitted pair recurs in the test period",
+                    file=stream,
+                )
     return 0
 
 

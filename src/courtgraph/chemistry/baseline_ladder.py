@@ -68,6 +68,9 @@ class HoldoutLadderResult:
     # "beat rung 2 on seen pairs" exit test lives in `pair_covered`.
     rung4_pair_covered: dict[str, float] | None = None
     rung4_pair_degraded: dict[str, float] | None = None
+    # pair-level "seen pairs" test: rung 2 vs rung 4 vs a placebo-pair rung 4,
+    # macro-averaged over every admitted pair that recurs in the test period.
+    rung4_pair_level: dict[str, float] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -89,6 +92,8 @@ class HoldoutLadderResult:
         if self.rung4_pair_covered is not None:
             out["rung4_pair_covered"] = dict(self.rung4_pair_covered)
             out["rung4_pair_degraded"] = dict(self.rung4_pair_degraded or {})
+        if self.rung4_pair_level is not None:
+            out["rung4_pair_level"] = dict(self.rung4_pair_level)
         return out
 
 
@@ -238,6 +243,74 @@ def _pair_coverage_breakdown(
     return _macro(covered), _macro(degraded)
 
 
+def _placebo_vocab(vocab: PairVocabulary, seed: int) -> PairVocabulary:
+    """Same admitted pair keys, same parameter count, same total pair exposure --
+    but each pair's stints are routed to a randomly chosen coefficient row (drawn
+    with replacement). Distinct real pairs collide onto shared rows and the
+    pair->outcome link is broken, so a rung-4 fit on it cannot carry
+    pair-specific signal. The control: real rung-4 error must be meaningfully
+    below this placebo error, otherwise the pair terms are only soaking up
+    additive misfit and noise."""
+
+    rng = np.random.default_rng(seed)
+    targets = tuple(int(x) for x in rng.integers(0, vocab.n_pairs, size=vocab.n_pairs))
+    return PairVocabulary(
+        pair_ids=vocab.pair_ids,
+        min_co_stints=vocab.min_co_stints,
+        _index=dict(vocab._index),
+        row_override=targets,
+    )
+
+
+def _pair_level_breakdown(
+    test_table: StintTable,
+    test_design: DesignMatrices,
+    rung2: AdditiveRidge,
+    rung4: PairHierarchicalRidge,
+    rung4_placebo: PairHierarchicalRidge,
+    admitted: set[str],
+    *,
+    min_test_stints: int = 5,
+) -> dict[str, float]:
+    """Rung 2 vs rung 4 vs a placebo-pair rung 4, macro-averaged over every
+    admitted pair that recurs in the held-out period (>= ``min_test_stints``
+    test stints with the pair on offense). Far better powered than the
+    all-pairs-covered-lineup test: hundreds of pair groups, not a few hundred
+    lineups. This is the rung-4 "beat rung 2 on seen pairs" exit test."""
+
+    groups: dict[str, list[int]] = {}
+    for i, stint in enumerate(test_table):
+        ids = stint.offense_player_ids
+        for a in range(5):
+            for b in range(a + 1, 5):
+                key = pair_id(ids[a], ids[b])
+                if key in admitted:
+                    groups.setdefault(key, []).append(i)
+    groups = {k: rows for k, rows in groups.items() if len(rows) >= min_test_stints}
+    if not groups:
+        return {"n_pair_groups": 0.0}
+
+    p2 = rung2.predict(test_design)
+    p4 = rung4.predict(test_design)
+    p4p = rung4_placebo.predict(test_design)
+    y_g, p2_g, p4_g, p4p_g = [], [], [], []
+    for rows in groups.values():
+        idx = np.asarray(rows, dtype=np.int64)
+        weight = test_design.weight[idx]
+        y_g.append(float(np.average(test_design.y[idx], weights=weight)))
+        p2_g.append(float(np.average(p2[idx], weights=weight)))
+        p4_g.append(float(np.average(p4[idx], weights=weight)))
+        p4p_g.append(float(np.average(p4p[idx], weights=weight)))
+    y_a = np.array(y_g)
+    return {
+        "n_pair_groups": float(len(groups)),
+        "min_test_stints": float(min_test_stints),
+        "rung2_macro_rmse": _rmse(np.array(p2_g), y_a),
+        "rung4_macro_rmse": _rmse(np.array(p4_g), y_a),
+        "rung4_placebo_macro_rmse": _rmse(np.array(p4p_g), y_a),
+    }
+
+
 def compare_rungs(
     table: StintTable,
     splits: dict[str, SplitManifest],
@@ -304,11 +377,25 @@ def compare_rungs(
                 "rung4_n_admitted_pairs": vocab.n_pairs,
             }
             if kind == "chronological":
+                rung4_placebo = PairHierarchicalRidge.fit(
+                    train_design,
+                    space,
+                    _placebo_vocab(vocab, seed),
+                    config=rung4_config,
+                )
                 covered, degraded = _pair_coverage_breakdown(
                     test_table, test_design, rung2, rung4, set(vocab.pair_ids)
                 )
                 rung4_kw["rung4_pair_covered"] = covered
                 rung4_kw["rung4_pair_degraded"] = degraded
+                rung4_kw["rung4_pair_level"] = _pair_level_breakdown(
+                    test_table,
+                    test_design,
+                    rung2,
+                    rung4,
+                    rung4_placebo,
+                    set(vocab.pair_ids),
+                )
 
         holdouts.append(
             HoldoutLadderResult(
