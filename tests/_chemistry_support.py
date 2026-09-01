@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from courtgraph.chemistry.chemistry_model import ChemistryConfig
+    from courtgraph.chemistry.hierarchical import HierarchicalConfig
     from courtgraph.chemistry.synthetic import SyntheticConfig
 
 HAS_NUMPY = importlib.util.find_spec("numpy") is not None
@@ -112,3 +113,19 @@ def scale_chemistry() -> ChemistryConfig:
         n_bootstrap=0,
         reference_sample=500,
     )
+
+
+def wellspec_synthetic() -> SyntheticConfig:
+    """``recovery_synthetic`` with the chemistry signal switched off -- a
+    well-specified additive world, for exact variance-component and
+    interval-coverage checks of the hierarchical (rung-3) model."""
+
+    return recovery_synthetic().with_no_interaction()
+
+
+def hierarchical_config() -> HierarchicalConfig:
+    """Faster EM settings for tests (looser tol, capped iters)."""
+
+    from courtgraph.chemistry.hierarchical import HierarchicalConfig
+
+    return HierarchicalConfig(tol=1e-6, max_iters=100)
