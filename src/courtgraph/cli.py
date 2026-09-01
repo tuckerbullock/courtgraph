@@ -169,6 +169,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     roles.add_argument("--json", action="store_true", help="print result as JSON")
 
+    redundancy = subparsers.add_parser(
+        "redundancy",
+        help="test skill redundancy / anti-synergy: coefficients on per-role "
+        "concentration features, vs rungs 2/3 and a permuted-role placebo",
+    )
+    redundancy.add_argument(
+        "--input", type=Path, required=True, help="stint file (.jsonl/.json)"
+    )
+    redundancy.add_argument(
+        "--profiles",
+        type=Path,
+        required=True,
+        help="player_profiles.jsonl from `courtgraph player-features`",
+    )
+    redundancy.add_argument(
+        "--clusters", type=int, default=5, help="role clusters (default 5)"
+    )
+    redundancy.add_argument(
+        "--bootstrap", type=int, default=120, help="rung-2 band resamples"
+    )
+    redundancy.add_argument("--seed", type=int, default=0, help="seed")
+    redundancy.add_argument("--json", action="store_true", help="print result as JSON")
+
     mechanistic = subparsers.add_parser(
         "mechanistic",
         help="test whether lineup composition shifts a mechanistic outcome "
@@ -654,6 +677,54 @@ def _cmd_transport(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_redundancy(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import run_redundancy
+
+    if args.bootstrap < 0 or args.clusters < 2:
+        print("redundancy: bad --bootstrap / --clusters", file=stream)
+        return 2
+    try:
+        result = run_redundancy(
+            args.input,
+            args.profiles,
+            n_clusters=args.clusters,
+            seed=args.seed,
+            n_boot=args.bootstrap,
+        )
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"redundancy: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True), file=stream)
+        return 0
+
+    vc = result.variance_components
+    print(
+        f"redundancy: tau_rho={vc['tau_rho']:.4f}  sigma={vc['sigma']:.2f}",
+        file=stream,
+    )
+    print(
+        "  rho_d (concentration effect, points per 100; real / placebo):", file=stream
+    )
+    for feat, val in result.rho.items():
+        print(
+            f"    {feat:<16} {val:+.3f}   ({result.rho_placebo.get(feat, 0.0):+.3f})",
+            file=stream,
+        )
+    print(
+        f"  {'holdout':<14} {'r2':>8} {'r3':>8} {'redund':>8} {'red-plc':>9}",
+        file=stream,
+    )
+    for h in result.holdouts:
+        print(
+            f"  {h.kind:<14} {h.rung2_macro_rmse:>8.3f} {h.rung3_macro_rmse:>8.3f} "
+            f"{h.redundancy_macro_rmse:>8.3f} {h.redundancy_placebo_macro_rmse:>9.3f}",
+            file=stream,
+        )
+    return 0
+
+
 def _cmd_mechanistic(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.chemistry.pipeline import run_mechanistic
 
@@ -954,6 +1025,7 @@ _COMMANDS = {
     "baselines": _cmd_baselines,
     "transport": _cmd_transport,
     "roles": _cmd_roles,
+    "redundancy": _cmd_redundancy,
     "mechanistic": _cmd_mechanistic,
     "player-features": _cmd_player_features,
     "predict": _cmd_predict,

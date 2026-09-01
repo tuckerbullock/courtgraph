@@ -114,6 +114,7 @@ def _role_dataset(
         centers=np.arange(n_roles, dtype=np.float64).reshape(-1, 1),
         assignment={(p, "2021-22"): role_of[p] for p in players},
         player_cluster=dict(role_of),
+        player_vector={p: (float(role_of[p]),) for p in players},
         seed=0,
     )
     return StintTable.from_stints(stints), clustering, delta

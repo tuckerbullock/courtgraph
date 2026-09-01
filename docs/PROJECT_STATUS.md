@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-09-01 (mechanistic outcomes — role signal strengthens)
+Last updated: 2026-09-01 (redundancy / anti-synergy — all six coefficients negative)
 
 ## Current phase
 
@@ -205,7 +205,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 215 unit tests, Ruff, mypy over 67 source
+The current implementation passes 220 unit tests, Ruff, mypy over 70 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
 --ingest-dir`) on the local five-season regular-season archive: 6,000 games
@@ -242,12 +242,15 @@ shot-based outcomes — **role beats the placebo by 2–5 % on three-point-attem
 share on all three holdouts** (including chronological), and by ~2 % on shot
 quality on the structural holdouts. The fitted role-pair matrix reads like the
 spacing mechanism (two shooters → more threes than additive; a rim big →
-fewer). Small (40–60 group means, no CI), not the contract's primary unit, so
-§17.1 is not cleared — but the first parameterisation to beat baseline and
-placebo out of sample, and directionally coherent. The next verifiable outcome
-is a **better-powered confirmation** (wider holdouts, bootstrap the
-role−rung-3 delta, K sweep) or candidate idea #3 (redundancy / anti-synergy).
-Neural rungs 6–7 stay gated.
+fewer). And `courtgraph redundancy` finds **all six per-role concentration
+coefficients `ρ_d` negative** — every kind of offensive skill redundancy is a
+small penalty (largest: offensive rebounding −0.20, usage −0.19; smallest:
+three-point rate −0.04), with a ~0.5 % placebo-surviving held-out edge and no
+drift penalty. Three consistent, directionally-coherent positives; all small
+(13–60 group means, no CI), none the contract's primary unit, so §17.1 is not
+cleared. The next verifiable outcome is a **better-powered confirmation**
+(wider holdouts, bootstrap the model−rung-3 delta, K sweep) or candidate idea
+#5 (transaction backtest). Neural rungs 6–7 stay gated.
 
 ## Governing document
 
