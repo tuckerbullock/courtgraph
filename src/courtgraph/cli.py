@@ -141,6 +141,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     transport.add_argument("--json", action="store_true", help="print result as JSON")
 
+    roles = subparsers.add_parser(
+        "roles",
+        help="compare a role-conditioned interaction model (interaction keyed "
+        "by role-cluster pair) against rungs 2/3 and a permuted-role placebo",
+    )
+    roles.add_argument(
+        "--input", type=Path, required=True, help="stint file (.jsonl/.json)"
+    )
+    roles.add_argument(
+        "--profiles",
+        type=Path,
+        required=True,
+        help="player_profiles.jsonl from `courtgraph player-features`",
+    )
+    roles.add_argument(
+        "--clusters", type=int, default=5, help="number of role clusters (default 5)"
+    )
+    roles.add_argument(
+        "--bootstrap",
+        type=int,
+        default=120,
+        help="rung-2 predictive-band resamples (0 to skip)",
+    )
+    roles.add_argument(
+        "--seed", type=int, default=0, help="clustering / bootstrap seed"
+    )
+    roles.add_argument("--json", action="store_true", help="print result as JSON")
+
     player_features = subparsers.add_parser(
         "player-features",
         help="derive per-(player, season) role/skill profiles from a snapshot "
@@ -588,6 +616,55 @@ def _cmd_transport(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_roles(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import run_roles
+
+    if args.bootstrap < 0:
+        print("roles: --bootstrap must be >= 0", file=stream)
+        return 2
+    if args.clusters < 2:
+        print("roles: --clusters must be >= 2", file=stream)
+        return 2
+    try:
+        result = run_roles(
+            args.input,
+            args.profiles,
+            n_clusters=args.clusters,
+            seed=args.seed,
+            n_boot=args.bootstrap,
+        )
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"roles: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True), file=stream)
+        return 0
+
+    vc = result.role_variance_components
+    print(
+        f"roles: {result.n_clusters} clusters over {result.n_clustered_players} "
+        f"players; tau_role={vc['tau_role']:.3f} "
+        f"(tau_off={vc['tau_off']:.2f}, sigma={vc['sigma']:.1f})",
+        file=stream,
+    )
+    print("  role-pair surplus matrix (points per 100):", file=stream)
+    for a, row in enumerate(result.role_pair_matrix):
+        cells = "  ".join(f"{v:+.2f}" for v in row)
+        print(f"    c{a}: {cells}", file=stream)
+    print(
+        f"  {'holdout':<14} {'r2':>8} {'r3':>8} {'role':>8} {'role-plc':>9}",
+        file=stream,
+    )
+    for h in result.holdouts:
+        print(
+            f"  {h.kind:<14} {h.rung2_macro_rmse:>8.3f} {h.rung3_macro_rmse:>8.3f} "
+            f"{h.role_macro_rmse:>8.3f} {h.role_placebo_macro_rmse:>9.3f}",
+            file=stream,
+        )
+    return 0
+
+
 def _cmd_player_features(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.features.player_season import (
         build_from_paths,
@@ -792,6 +869,7 @@ _COMMANDS = {
     "fit": _cmd_fit,
     "baselines": _cmd_baselines,
     "transport": _cmd_transport,
+    "roles": _cmd_roles,
     "player-features": _cmd_player_features,
     "predict": _cmd_predict,
 }
