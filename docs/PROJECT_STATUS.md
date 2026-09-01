@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-09-01 (role-conditioned interaction — first non-null)
+Last updated: 2026-09-01 (mechanistic outcomes — role signal strengthens)
 
 ## Current phase
 
@@ -205,7 +205,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 210 unit tests, Ruff, mypy over 63 source
+The current implementation passes 215 unit tests, Ruff, mypy over 67 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
 --ingest-dir`) on the local five-season regular-season archive: 6,000 games
@@ -235,13 +235,19 @@ well-powered pair-level test in-sample (668 pair groups) and in the playoffs
 (476 pair groups). The null is written up in
 [`docs/INTERACTION_FINDINGS.md`](INTERACTION_FINDINGS.md).
 
-**The role-conditioned model (`courtgraph roles`) is the first non-null:** it
-beats rung 3 **and** a permuted-role placebo by ~1 % on the two structural
-holdouts (40 / 60 group means, no CI yet), while degrading under temporal
-drift. Suggestive, not established — it does not clear §17.1. The next
-verifiable outcome is a **better-powered confirmation** — widen the structural
-holdouts to ~120 groups, bootstrap the role−rung-3 delta, sweep K — or
-candidate idea #2 (mechanistic outcomes). Neural rungs 6–7 stay gated.
+**Role-conditioning is a small positive.** `courtgraph roles` beats rung 3
+**and** a permuted-role placebo by ~1 % on the two structural holdouts on
+points/100; `courtgraph mechanistic` shows the same signal more clearly on
+shot-based outcomes — **role beats the placebo by 2–5 % on three-point-attempt
+share on all three holdouts** (including chronological), and by ~2 % on shot
+quality on the structural holdouts. The fitted role-pair matrix reads like the
+spacing mechanism (two shooters → more threes than additive; a rim big →
+fewer). Small (40–60 group means, no CI), not the contract's primary unit, so
+§17.1 is not cleared — but the first parameterisation to beat baseline and
+placebo out of sample, and directionally coherent. The next verifiable outcome
+is a **better-powered confirmation** (wider holdouts, bootstrap the
+role−rung-3 delta, K sweep) or candidate idea #3 (redundancy / anti-synergy).
+Neural rungs 6–7 stay gated.
 
 ## Governing document
 

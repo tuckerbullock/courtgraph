@@ -24,16 +24,22 @@ held-out prediction over hierarchical additive talent on any of four
 leakage-safe evaluation tasks, and the explicit per-pair terms are
 statistically indistinguishable from a placebo with the same parameter count.
 
-**One later parameterisation is a weak positive.** The **role-conditioned**
-model (`courtgraph roles`, 2026-09-01) — interaction keyed by the pair of
-*role clusters* the two players belong to, not by identity, so 15 pooled
-parameters replace ~2,357 thin per-identity ones — beats the rung-3 baseline
-**and** a permuted-role placebo by ~1 % on the two structural holdouts
-(unseen-pair, unseen-lineup). That is small, at the edge of what 40–60 group
-means resolve, with no significance test yet, and it *degrades* under temporal
-drift. It does not clear the contract's §17.1 usefulness bar, but it is the
-first form to beat both baseline and placebo out of sample, and it warrants a
-better-powered follow-up. See "Role-conditioned interaction" below.
+**Role-conditioning is a small positive.** The **role-conditioned** model
+(`courtgraph roles`, 2026-09-01) — interaction keyed by the pair of *role
+clusters* the two players belong to, not by identity, so 15 pooled parameters
+replace ~2,357 thin per-identity ones — beats the rung-3 baseline **and** a
+permuted-role placebo by ~1 % on the two structural holdouts on points/100,
+and by 2–5 % on **mechanistic** outcomes (`courtgraph mechanistic`): shot
+quality, and especially **three-point-attempt share**, where role beats the
+placebo on *all three* holdouts. The fitted role-pair matrix reads like the
+spacing mechanism — two shooters together take more threes than additive
+predicts, a rim-running big fewer. This is small (40–60 group means, no
+significance test yet), it *degrades* on points/100 under temporal drift, and
+mechanistic outcomes are not the contract's primary unit — so it does not
+clear §17.1. But it is the first parameterisation to beat both baseline and
+placebo out of sample, it is directionally coherent, and it warrants a
+better-powered confirmation. See "Role-conditioned interaction" and
+"Mechanistic outcomes" below.
 
 This is **not** a causal claim that no two players affect each other. It is a
 predictive statement about the modelled forms of interaction at this data
@@ -166,6 +172,40 @@ the in-sample matrix, are the evidence.
 better-powered confirmation — widen the structural holdouts to ~120 groups,
 bootstrap the role−rung-3 delta, sweep K — is the natural next step.
 
+## Mechanistic outcomes — the same signal, more clearly
+
+`courtgraph mechanistic` (2026-09-01). Points/100 is a noisy target (σ ≈ 119).
+Shots are attributed to stints by a time-window join (99.98 % matched) and the
+outcome is swapped for a mechanical quantity: `pts_per_shot` (an eFG proxy),
+`rim_share`, or `three_share`. Same rung 2 / 3 / role / permuted-role-placebo
+comparison.
+
+Held-out macro RMSE, role vs its placebo (positive = role better):
+
+| outcome | chronological | unseen_pair | unseen_lineup |
+|---|---|---|---|
+| **three_share** | **+4.7 %** | **+1.9 %** | **+2.5 %** |
+| pts_per_shot | −13 % | **+1.9 %** | **+2.1 %** |
+| rim_share | **+3.2 %** | −0.3 % | **+1.4 %** |
+
+`three_share` is the strongest result of the investigation: role-conditioning
+beats the placebo on **all three** holdouts, including the chronological one
+that every other test fails — shot-selection tendencies are more era-stable
+than scoring efficiency. `pts_per_shot` beats the placebo by ~2 % on the two
+structural holdouts (a bit stronger than the ~1 % on points/100).
+
+The fitted `three_share` role-pair matrix is unambiguous about the mechanism:
+
+- **two movement shooters together → the lineup takes *more* threes than the
+  sum of their individual rates (+0.013 share);**
+- **a rim-running big with anyone → *fewer* threes than additive predicts
+  (−0.004 to −0.012).**
+
+That is the spacing intuition, with the sign it predicts, surviving a placebo
+on every holdout. It is not the contract's primary unit (points per 100), so
+it does not clear §17.1 by itself — but it is direct evidence that a real,
+small, role-dependent non-additivity exists in how lineups shoot.
+
 ## What this establishes — and what it does not
 
 **Supported:**
@@ -217,6 +257,11 @@ courtgraph roles \
   --input data/nba_snapshots/rs_2020_2024/out/stints.jsonl \
   --profiles data/nba_snapshots/rs_2020_2024/player_profiles.jsonl \
   --clusters 5 --bootstrap 120 --json
+courtgraph mechanistic \
+  --input data/nba_snapshots/rs_2020_2024/out/stints.jsonl \
+  --snapshot-dir data/nba_snapshots/rs_2020_2024/snap \
+  --profiles data/nba_snapshots/rs_2020_2024/player_profiles.jsonl \
+  --outcome three_share --clusters 5 --bootstrap 100 --json
 ```
 
 Result JSONs are gitignored under `data/nba_snapshots/`. Rung-5 numbers:

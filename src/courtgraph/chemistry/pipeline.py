@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from courtgraph.chemistry.baseline_ladder import LadderComparison
+    from courtgraph.chemistry.mechanistic import MechanisticComparison
     from courtgraph.chemistry.role_eval import RoleComparison
     from courtgraph.chemistry.transport import TransportResult
 
@@ -268,6 +269,46 @@ def run_roles(
     splits = make_all_splits(table)
     return evaluate_role_interaction(
         table, splits, clustering, seed=seed, n_boot=n_boot
+    )
+
+
+def run_mechanistic(
+    stints_path: str | Path,
+    snapshot_dir: str | Path,
+    profiles_path: str | Path,
+    *,
+    outcome: str = "pts_per_shot",
+    min_fga: int = 3,
+    n_clusters: int = 5,
+    seed: int = 0,
+    n_boot: int = 120,
+) -> MechanisticComparison:
+    """Attribute shots to stints, then compare rung 2 / rung 3 / role /
+    permuted-role-placebo on a mechanistic outcome (shot quality or shot mix).
+    See :mod:`courtgraph.chemistry.mechanistic`."""
+
+    from courtgraph.chemistry.mechanistic import evaluate_mechanistic
+    from courtgraph.features.player_season import read_player_profiles
+    from courtgraph.features.role_clusters import fit_role_clusters
+    from courtgraph.features.stint_shots import attribute_shots
+    from courtgraph.ingest.snapshot import load_snapshot
+
+    table = read_stints(stints_path)
+    if len(table) < 50:
+        raise ValueError(f"{stints_path}: only {len(table)} stints; need more")
+    snapshot = load_snapshot(snapshot_dir)
+    attribution = attribute_shots(snapshot, table)
+    clustering = fit_role_clusters(
+        read_player_profiles(profiles_path), n_clusters=n_clusters, seed=seed
+    )
+    return evaluate_mechanistic(
+        table,
+        attribution,
+        clustering,
+        outcome=outcome,
+        min_fga=min_fga,
+        seed=seed,
+        n_boot=n_boot,
     )
 
 

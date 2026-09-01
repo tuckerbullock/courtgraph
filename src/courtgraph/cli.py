@@ -169,6 +169,44 @@ def build_parser() -> argparse.ArgumentParser:
     )
     roles.add_argument("--json", action="store_true", help="print result as JSON")
 
+    mechanistic = subparsers.add_parser(
+        "mechanistic",
+        help="test whether lineup composition shifts a mechanistic outcome "
+        "(shot quality / shot mix) non-additively",
+    )
+    mechanistic.add_argument(
+        "--input", type=Path, required=True, help="stint file (.jsonl/.json)"
+    )
+    mechanistic.add_argument(
+        "--snapshot-dir",
+        type=Path,
+        required=True,
+        help="snapshot directory the stints were built from (read-only)",
+    )
+    mechanistic.add_argument(
+        "--profiles",
+        type=Path,
+        required=True,
+        help="player_profiles.jsonl from `courtgraph player-features`",
+    )
+    mechanistic.add_argument(
+        "--outcome",
+        choices=("pts_per_shot", "rim_share", "three_share"),
+        default="pts_per_shot",
+        help="the mechanistic target (default pts_per_shot)",
+    )
+    mechanistic.add_argument(
+        "--min-fga", type=int, default=3, help="drop stints below this many FGA"
+    )
+    mechanistic.add_argument(
+        "--clusters", type=int, default=5, help="role clusters (default 5)"
+    )
+    mechanistic.add_argument(
+        "--bootstrap", type=int, default=120, help="rung-2 band resamples"
+    )
+    mechanistic.add_argument("--seed", type=int, default=0, help="seed")
+    mechanistic.add_argument("--json", action="store_true", help="print result as JSON")
+
     player_features = subparsers.add_parser(
         "player-features",
         help="derive per-(player, season) role/skill profiles from a snapshot "
@@ -616,6 +654,52 @@ def _cmd_transport(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_mechanistic(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import run_mechanistic
+
+    if args.bootstrap < 0 or args.clusters < 2 or args.min_fga < 1:
+        print("mechanistic: bad --bootstrap / --clusters / --min-fga", file=stream)
+        return 2
+    try:
+        result = run_mechanistic(
+            args.input,
+            args.snapshot_dir,
+            args.profiles,
+            outcome=args.outcome,
+            min_fga=args.min_fga,
+            n_clusters=args.clusters,
+            seed=args.seed,
+            n_boot=args.bootstrap,
+        )
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"mechanistic: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True), file=stream)
+        return 0
+
+    print(
+        f"mechanistic [{result.outcome}]: {result.n_stints_kept} stints "
+        f"(>= {result.min_fga} FGA), mean {result.mean_outcome:.3f}, "
+        f"shot match {result.shots_match_rate:.1%}",
+        file=stream,
+    )
+    vc = result.role_variance_components
+    print(f"  role tau={vc['tau_role']:.4f}  sigma={vc['sigma']:.2f}", file=stream)
+    print(
+        f"  {'holdout':<14} {'r2':>8} {'r3':>8} {'role':>8} {'role-plc':>9}",
+        file=stream,
+    )
+    for h in result.holdouts:
+        print(
+            f"  {h.kind:<14} {h.rung2_macro_rmse:>8.4f} {h.rung3_macro_rmse:>8.4f} "
+            f"{h.role_macro_rmse:>8.4f} {h.role_placebo_macro_rmse:>9.4f}",
+            file=stream,
+        )
+    return 0
+
+
 def _cmd_roles(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.chemistry.pipeline import run_roles
 
@@ -870,6 +954,7 @@ _COMMANDS = {
     "baselines": _cmd_baselines,
     "transport": _cmd_transport,
     "roles": _cmd_roles,
+    "mechanistic": _cmd_mechanistic,
     "player-features": _cmd_player_features,
     "predict": _cmd_predict,
 }
