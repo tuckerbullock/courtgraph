@@ -80,6 +80,13 @@ def build_parser() -> argparse.ArgumentParser:
     fit.add_argument("--seed", type=int, default=0, help="model random seed")
     fit.add_argument("--rank", type=int, default=3, help="interaction embedding rank")
     fit.add_argument(
+        "--bootstrap",
+        type=int,
+        default=8,
+        help="interaction bootstrap-ensemble size (0 to skip; large stint files "
+        "are much faster with 0 and the holdout RMSEs are unaffected)",
+    )
+    fit.add_argument(
         "--evaluate",
         action="store_true",
         help="also run the leakage-safe holdout evaluation and print it",
@@ -302,7 +309,10 @@ def _cmd_fit(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.chemistry.chemistry_model import ChemistryConfig
     from courtgraph.chemistry.pipeline import evaluate_model_file, fit_model_file
 
-    config = ChemistryConfig(seed=args.seed, rank=args.rank)
+    if args.bootstrap < 0:
+        print("fit: --bootstrap must be >= 0", file=stream)
+        return 2
+    config = ChemistryConfig(seed=args.seed, rank=args.rank, n_bootstrap=args.bootstrap)
     model, path = fit_model_file(args.input, args.model_out, config=config)
     payload: dict[str, Any] = {
         "model_path": str(path),

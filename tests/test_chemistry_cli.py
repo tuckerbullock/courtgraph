@@ -183,6 +183,46 @@ class ChemistryCommandTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("total value V", pred.getvalue())
 
+    def test_fit_bootstrap_zero_and_evaluate(self) -> None:
+        from courtgraph.chemistry.artifact import load_model
+
+        out_model = Path(self._dir.name) / "fit_boot0.json"
+        out = StringIO()
+        code = main(
+            [
+                "fit",
+                "--input",
+                str(self.demo.stints_path),
+                "--model-out",
+                str(out_model),
+                "--bootstrap",
+                "0",
+                "--evaluate",
+                "--json",
+            ],
+            output=out,
+        )
+        self.assertEqual(code, 0)
+        payload = json.loads(out.getvalue())
+        self.assertEqual(len(payload["holdouts"]), 3)
+        model, _meta = load_model(out_model)
+        self.assertEqual(len(model.interaction_ensemble), 0)
+
+    def test_fit_rejects_negative_bootstrap(self) -> None:
+        code = main(
+            [
+                "fit",
+                "--input",
+                str(self.demo.stints_path),
+                "--model-out",
+                str(Path(self._dir.name) / "never.json"),
+                "--bootstrap",
+                "-1",
+            ],
+            output=StringIO(),
+        )
+        self.assertEqual(code, 2)
+
     def test_predict_rejects_a_bad_lineup(self) -> None:
         from courtgraph.chemistry.pipeline import predict_lineup
 
