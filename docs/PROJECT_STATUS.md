@@ -147,10 +147,16 @@ feed), not an independent lineage. No demonstrated betting edge exists.
     (.30 / .53 / .75). `z_mean ≈ 0` for all three (no large systematic phase
     offset at the lineup-value level). `courtgraph transport`; see
     `docs/CURRENT_TASK.md`.
-  - Next (roadmap direction #1): write up the "not supported" finding for
-    transferable pair/lineup chemistry as a standing findings document. Then
-    direction #4: role-conditioned interactions, and a new backlog item —
-    quantify a player's effect on improving teammates' *individual* production.
+  - **The "not supported" finding is written up** (roadmap direction #1):
+    [`docs/INTERACTION_FINDINGS.md`](INTERACTION_FINDINGS.md) is the standing
+    record — the verdict, the models, the four evaluation tasks, the results,
+    and what the null does and does not establish (talent absorption, no
+    features, the noise floor, dynamic effects out of scope).
+  - Next: the master plan's **§45 player-lift** backlog item — quantify a
+    player's asymmetric effect on teammates' *individual* production (Phase A:
+    a pooled lift scalar on lineup value; Phase B: a per-player on-court
+    production model, needs an ingest extension). Also open: role-conditioned
+    interactions (§21).
 
 ## Not started
 - Recovering the 840 quarantined regular-season games (503 `network_required`,
