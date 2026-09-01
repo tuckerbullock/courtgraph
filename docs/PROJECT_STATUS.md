@@ -18,6 +18,12 @@ feed), not an independent lineage. No demonstrated betting edge exists.
 
 ## Completed
 
+- **Model ladder rung 4 — explicit teammate-pair interaction RAPM**
+  (`src/courtgraph/chemistry/pair_interaction.py`, `courtgraph baselines
+  --rung4`): the rung-3 EB model plus an explicit `γ_ij` term per admitted
+  offensive teammate pair (learned `τ_pair²`); pairs admitted by a training
+  co-stint threshold (master plan §15.3). Offense pairs only for v1. **On the
+  real data it does not beat rungs 2 or 3** — see *In progress*.
 - **Model ladder rung 3 — empirical-Bayes hierarchical player model**
   (`src/courtgraph/chemistry/hierarchical.py`, `courtgraph baselines`): variance
   components learned by EM (not a CV scalar), per-lineup Gaussian predictive
@@ -115,8 +121,19 @@ feed), not an independent lineage. No demonstrated betting edge exists.
     chemistry claims are judged against. Both models fail the chronological
     holdout (systematic under-prediction under era / roster drift). Numbers in
     `docs/CURRENT_TASK.md`.
-  - Next: rung 4 (explicit teammate-pair interactions), evaluated against the
-    rung-3 reference on the wider holdouts.
+  - **Rung 4 (explicit teammate-pair interaction RAPM)** — the rung-3 model
+    plus a free `γ_ij` term per admitted offensive pair — **does not beat rungs
+    2 or 3** on the widened holdouts: macro RMSE 3.843 / 19.222 / 5.495
+    (chronological / unseen-pair / unseen-lineup) vs rung 3's 3.551 / 19.203 /
+    5.256, and its calibration is no better. The §11 exit test ("beat rung 2 on
+    seen pairs") is not met (47.46 vs 47.28, over only 209 fully-pair-covered
+    lineups — also underpowered). Third consecutive null for non-additive
+    lineup structure on this data; `RESEARCH_CONTRACT.md` §26's "successive
+    models show no transferable interaction signal" applies. Numbers in
+    `docs/CURRENT_TASK.md`.
+  - Next is a strategic fork (`docs/CURRENT_TASK.md`): report the null; or a
+    better-powered pair evaluation; or more / different data; or a
+    role-conditioned interaction parameterization.
 
 ## Not started
 - Recovering the 840 quarantined regular-season games (503 `network_required`,
@@ -125,7 +142,7 @@ feed), not an independent lineage. No demonstrated betting edge exists.
 - 2025-26 regular season (no play-by-play from this source yet) and
   2016-17 → 2019-20 (contract-gated on data-quality checks).
 - The contract's independent-parser gate and multi-game reconciliation gate; minute/lineup-minute reconciliation.
-- Model-ladder rungs 1, 3, 4, and 7; calibrated Bayesian uncertainty.
+- Model-ladder rungs 1 and 7; calibrated Bayesian uncertainty.
 - Transaction backtest (T4); the contract's full six-part evidence bar.
 - Real-NBA predictive lineup recommendations, dated complete-roster generation, and the broader product backlog. The local observational/synthetic app is implemented.
 
@@ -157,7 +174,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 181 unit tests, Ruff, mypy over 51 source
+The current implementation passes 189 unit tests, Ruff, mypy over 53 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
 --ingest-dir`) on the local five-season regular-season archive: 6,000 games
@@ -174,15 +191,17 @@ no-signal control produces no improvement.
 
 ## Next verifiable outcome
 
-Rungs 2, 3, and 5 have been fit and evaluated on the 266k real stints against
-the widened holdouts (`docs/CURRENT_TASK.md`): rung 3 (hierarchical EB)
-out-calibrates rung 2 on the structural holdouts and is the reference baseline;
-rung 5 (low-rank interaction) does not beat rung 2. The next verifiable step is
-**rung 4 — explicit teammate-pair interactions** — evaluated against the rung-3
-reference: it must beat rung 2 on seen pairs (§11), and its held-out
-unseen-pair / unseen-lineup calibration must not degrade relative to rung 3
-(§15). Advanced models stay gated on a rung actually improving a preregistered
-task.
+Ladder rungs 0–5 have been fit and evaluated on the 266k real regular-season
+stints against the widened holdouts (`docs/CURRENT_TASK.md`). Rung 3
+(hierarchical EB) is the reference baseline and out-calibrates rung 2 on the
+structural holdouts. **Neither interaction rung beats it**: rung 5 (low-rank)
+and rung 4 (explicit pairs) both fail to improve held-out prediction, and
+`RESEARCH_CONTRACT.md` §26's "successive models show no transferable interaction
+signal" now applies. The next step is a strategic decision recorded in
+`docs/CURRENT_TASK.md`: report the "not supported" finding for transferable
+pair/lineup chemistry; or a better-powered pair evaluation; or more / different
+data; or a role-conditioned interaction parameterization. Neural rungs 6–7 stay
+gated — the interaction question has not passed at rungs 0–5.
 
 ## Governing document
 
