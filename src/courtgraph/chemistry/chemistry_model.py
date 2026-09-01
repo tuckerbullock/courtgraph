@@ -173,10 +173,17 @@ class LowRankInteraction:
         t = (target - target_mean) / target_std
 
         width = n_players * rank
-        buf = np.zeros((n, n_players, rank))  # reused across half-sweeps
-        rows = np.arange(n)[:, None]
-        eye_l2 = l2 * np.eye(width)
         wt = w * t
+
+        # Each stint's 5 offensive slots are the only non-zero player blocks in
+        # the (n x n_players*rank) design, so the normal-equations Gram / rhs are
+        # accumulated by scattering the 25 (player, player) index pairs per row
+        # -- O(n * 25 * rank**2) -- rather than materializing that design.
+        idx_flat = idx.ravel()
+        bi = np.broadcast_to(idx[:, :, None], (n, 5, 5))
+        bj = np.broadcast_to(idx[:, None, :], (n, 5, 5))
+        pair_lin = (bi * n_players + bj).ravel()
+        diag = np.diag_indices(width)
 
         provision = np.zeros((n_players, rank))
         need = rng.normal(0.0, init_scale, size=(n_players, rank))
@@ -184,13 +191,26 @@ class LowRankInteraction:
         def half_step(other: FloatArray) -> FloatArray:
             other_g = other[idx]  # (n, 5, rank)
             coef = other_g.sum(axis=1)[:, None, :] - other_g
-            buf.fill(0.0)
-            buf[rows, idx, :] = coef
-            flat = buf.reshape(n, width)
-            gram = flat.T @ (w[:, None] * flat) + eye_l2
-            rhs = flat.T @ wt
+            gram4 = np.zeros((n_players, rank, n_players, rank))
+            for a in range(rank):
+                weighted = w[:, None, None] * coef[:, :, None, a]  # (n, 5, 1)
+                for b in range(rank):
+                    contrib = (weighted * coef[:, None, :, b]).ravel()
+                    gram4[:, a, :, b] = np.bincount(
+                        pair_lin, weights=contrib, minlength=n_players * n_players
+                    ).reshape(n_players, n_players)
+            gram = gram4.reshape(width, width)
+            gram[diag] += l2
+            rhs = np.empty((n_players, rank))
+            for a in range(rank):
+                rhs[:, a] = np.bincount(
+                    idx_flat,
+                    weights=(wt[:, None] * coef[:, :, a]).ravel(),
+                    minlength=n_players,
+                )
             return np.asarray(
-                np.linalg.solve(gram, rhs).reshape(n_players, rank), dtype=np.float64
+                np.linalg.solve(gram, rhs.reshape(width)).reshape(n_players, rank),
+                dtype=np.float64,
             )
 
         delta = np.inf
@@ -702,8 +722,6 @@ def _mask(design: DesignMatrices, mask: NDArray[np.bool_]) -> DesignMatrices:
     keep = np.flatnonzero(mask)
     return DesignMatrices(
         context=design.context[keep],
-        offense_onehot=design.offense_onehot[keep],
-        defense_onehot=design.defense_onehot[keep],
         offense_index=design.offense_index[keep],
         defense_index=design.defense_index[keep],
         y=design.y[keep],

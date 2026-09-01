@@ -30,10 +30,8 @@ class DesignMatrices:
     """Everything a linear or embedding model needs for one stint table."""
 
     context: FloatArray  # (n, n_context)
-    offense_onehot: FloatArray  # (n, n_players) 0/1
-    defense_onehot: FloatArray  # (n, n_players) 0/1
-    offense_index: IntArray  # (n, 5) player positions on offense
-    defense_index: IntArray  # (n, 5) player positions on defense
+    offense_index: IntArray  # (n, 5) player positions on offense, -1 = unseen
+    defense_index: IntArray  # (n, 5) player positions on defense, -1 = unseen
     y: FloatArray  # (n,) offensive rating (points / 100 possessions)
     weight: FloatArray  # (n,) offensive possessions (exposure)
     game_ids: tuple[str, ...]
@@ -127,8 +125,6 @@ class FeatureSpace:
         n = len(table)
         index = self.player_index()
         context = np.zeros((n, self.n_context), dtype=np.float64)
-        offense_onehot = np.zeros((n, self.n_players), dtype=np.float64)
-        defense_onehot = np.zeros((n, self.n_players), dtype=np.float64)
         offense_index = np.full((n, 5), -1, dtype=np.int64)
         defense_index = np.full((n, 5), -1, dtype=np.int64)
         y = np.zeros(n, dtype=np.float64)
@@ -138,21 +134,13 @@ class FeatureSpace:
             for c, name in enumerate(self.context_columns):
                 context[r, c] = row[name]
             for k, pid in enumerate(stint.offense_player_ids):
-                pos = index.get(pid, -1)
-                offense_index[r, k] = pos
-                if pos >= 0:
-                    offense_onehot[r, pos] = 1.0
+                offense_index[r, k] = index.get(pid, -1)
             for k, pid in enumerate(stint.defense_player_ids):
-                pos = index.get(pid, -1)
-                defense_index[r, k] = pos
-                if pos >= 0:
-                    defense_onehot[r, pos] = 1.0
+                defense_index[r, k] = index.get(pid, -1)
             y[r] = stint.offensive_rating
             weight[r] = float(stint.offensive_possessions)
         return DesignMatrices(
             context=context,
-            offense_onehot=offense_onehot,
-            defense_onehot=defense_onehot,
             offense_index=offense_index,
             defense_index=defense_index,
             y=y,
