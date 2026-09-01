@@ -170,6 +170,8 @@ def _cross_gram(
     never an ``(n, dim)`` intermediate. ``-1`` in either index contributes 0.
     """
 
+    if dim_i == 0 or dim_j == 0:
+        return np.zeros((dim_i, dim_j), dtype=np.float64)
     n, k_i = ix.shape
     k_j = jx.shape[1]
     bi = np.broadcast_to(ix[:, :, None], (n, k_i, k_j))

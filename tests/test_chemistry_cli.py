@@ -252,6 +252,30 @@ class ChemistryCommandTests(unittest.TestCase):
         self.assertIn("coverage_95", first["rung3_calibration"])
         self.assertIn("rung2_macro_rmse", first)
 
+    def test_baselines_rung4_adds_the_pair_interaction_columns(self) -> None:
+        out = StringIO()
+        code = main(
+            [
+                "baselines",
+                "--input",
+                str(self.demo.stints_path),
+                "--bootstrap",
+                "5",
+                "--rung4",
+                "--json",
+            ],
+            output=out,
+        )
+        self.assertEqual(code, 0)
+        payload = json.loads(out.getvalue())
+        for h in payload["holdouts"]:
+            self.assertIn("rung4_macro_rmse", h)
+            self.assertIn("coverage_95", h["rung4_calibration"])
+            self.assertIn("rung4_n_admitted_pairs", h)
+        chron = next(h for h in payload["holdouts"] if h["kind"] == "chronological")
+        self.assertIn("rung4_pair_covered", chron)
+        self.assertIn("rung4_pair_degraded", chron)
+
     def test_baselines_rejects_negative_bootstrap(self) -> None:
         code = main(
             [

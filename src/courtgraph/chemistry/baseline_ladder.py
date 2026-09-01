@@ -35,8 +35,13 @@ from courtgraph.chemistry.calibration import calibration_report
 from courtgraph.chemistry.evaluate import _group_index, _rmse
 from courtgraph.chemistry.features import DesignMatrices, FeatureSpace
 from courtgraph.chemistry.hierarchical import HierarchicalConfig, HierarchicalRidge
+from courtgraph.chemistry.pair_interaction import (
+    PairHierarchicalConfig,
+    PairHierarchicalRidge,
+    PairVocabulary,
+)
 from courtgraph.chemistry.splits import SplitManifest
-from courtgraph.chemistry.stints import StintTable
+from courtgraph.chemistry.stints import StintTable, pair_id
 
 FloatArray = NDArray[np.float64]
 _HOLDOUTS = ("chronological", "unseen_pair", "unseen_lineup")
@@ -54,9 +59,18 @@ class HoldoutLadderResult:
     rung3_micro_rmse: float
     rung3_calibration: dict[str, float]
     rung2_band_calibration: dict[str, float]
+    # rung 4 (only when compare_rungs is given a rung4_config)
+    rung4_macro_rmse: float | None = None
+    rung4_calibration: dict[str, float] | None = None
+    rung4_n_admitted_pairs: int | None = None
+    # chronological only: rung 2 vs rung 4 split by whether every offense pair
+    # of a held-out lineup is in rung 4's admitted vocabulary -- the section 11
+    # "beat rung 2 on seen pairs" exit test lives in `pair_covered`.
+    rung4_pair_covered: dict[str, float] | None = None
+    rung4_pair_degraded: dict[str, float] | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "kind": self.kind,
             "n_train": self.n_train,
             "n_test": self.n_test,
@@ -68,6 +82,14 @@ class HoldoutLadderResult:
             "rung3_calibration": dict(self.rung3_calibration),
             "rung2_band_calibration": dict(self.rung2_band_calibration),
         }
+        if self.rung4_macro_rmse is not None:
+            out["rung4_macro_rmse"] = self.rung4_macro_rmse
+            out["rung4_calibration"] = dict(self.rung4_calibration or {})
+            out["rung4_n_admitted_pairs"] = self.rung4_n_admitted_pairs
+        if self.rung4_pair_covered is not None:
+            out["rung4_pair_covered"] = dict(self.rung4_pair_covered)
+            out["rung4_pair_degraded"] = dict(self.rung4_pair_degraded or {})
+        return out
 
 
 @dataclass(frozen=True)
@@ -159,6 +181,63 @@ def _rung2_band(
     return out
 
 
+def _lineup_groups(
+    test_table: StintTable,
+) -> dict[str, tuple[tuple[int, ...], list[int]]]:
+    """Held-out test rows bucketed by exact offensive five (id -> (ids, rows))."""
+
+    out: dict[str, tuple[tuple[int, ...], list[int]]] = {}
+    for i, stint in enumerate(test_table):
+        lid = stint.offense_lineup_id
+        if lid not in out:
+            out[lid] = (stint.offense_player_ids, [])
+        out[lid][1].append(i)
+    return out
+
+
+def _pair_coverage_breakdown(
+    test_table: StintTable,
+    test_design: DesignMatrices,
+    rung2: AdditiveRidge,
+    rung4: PairHierarchicalRidge,
+    admitted: set[str],
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Rung 2 vs rung 4 macro RMSE over held-out lineups, split by whether every
+    offensive pair of the lineup is in rung 4's admitted vocabulary."""
+
+    lineups = _lineup_groups(test_table)
+    covered: dict[str, list[int]] = {}
+    degraded: dict[str, list[int]] = {}
+    for lid, (ids, rows) in lineups.items():
+        full = all(
+            pair_id(ids[a], ids[b]) in admitted
+            for a in range(5)
+            for b in range(a + 1, 5)
+        )
+        (covered if full else degraded)[lid] = rows
+
+    def _macro(buckets: dict[str, list[int]]) -> dict[str, float]:
+        if not buckets:
+            return {"n_groups": 0.0}
+        p2_pred = rung2.predict(test_design)
+        p4_pred = rung4.predict(test_design)
+        y_g, p2_g, p4_g = [], [], []
+        for rows in buckets.values():
+            idx = np.asarray(rows, dtype=np.int64)
+            weight = test_design.weight[idx]
+            y_g.append(float(np.average(test_design.y[idx], weights=weight)))
+            p2_g.append(float(np.average(p2_pred[idx], weights=weight)))
+            p4_g.append(float(np.average(p4_pred[idx], weights=weight)))
+        y_a = np.array(y_g)
+        return {
+            "n_groups": float(len(buckets)),
+            "rung2_macro_rmse": _rmse(np.array(p2_g), y_a),
+            "rung4_macro_rmse": _rmse(np.array(p4_g), y_a),
+        }
+
+    return _macro(covered), _macro(degraded)
+
+
 def compare_rungs(
     table: StintTable,
     splits: dict[str, SplitManifest],
@@ -166,6 +245,7 @@ def compare_rungs(
     seed: int = 0,
     n_boot: int = 150,
     config: HierarchicalConfig | None = None,
+    rung4_config: PairHierarchicalConfig | None = None,
 ) -> LadderComparison:
     space_all = FeatureSpace.from_training(table)
     global_rung3 = HierarchicalRidge.fit(
@@ -187,10 +267,9 @@ def compare_rungs(
         groups = _group_index(test_table, manifest)
         realized = _group_realized(test_design, groups)
         keys = list(groups)
+        group_arrays = {g: np.asarray(groups[g], dtype=np.int64) for g in keys}
 
-        r3 = rung3.group_predictive(
-            test_design, {g: np.asarray(groups[g], dtype=np.int64) for g in keys}
-        )
+        r3 = rung3.group_predictive(test_design, group_arrays)
         r2 = _rung2_band(
             train_table,
             space,
@@ -208,6 +287,29 @@ def compare_rungs(
         p3 = np.array([r3[k][0] for k in keys])
         s3 = np.array([r3[k][1] for k in keys])
 
+        rung4_kw: dict[str, Any] = {}
+        if rung4_config is not None:
+            vocab = PairVocabulary.from_training(
+                train_table, min_co_stints=rung4_config.min_co_stints
+            )
+            rung4 = PairHierarchicalRidge.fit(
+                train_design, space, vocab, config=rung4_config
+            )
+            r4 = rung4.group_predictive(test_design, group_arrays)
+            p4 = np.array([r4[k][0] for k in keys])
+            s4 = np.array([r4[k][1] for k in keys])
+            rung4_kw = {
+                "rung4_macro_rmse": _rmse(p4, y),
+                "rung4_calibration": calibration_report(p4, s4, y),
+                "rung4_n_admitted_pairs": vocab.n_pairs,
+            }
+            if kind == "chronological":
+                covered, degraded = _pair_coverage_breakdown(
+                    test_table, test_design, rung2, rung4, set(vocab.pair_ids)
+                )
+                rung4_kw["rung4_pair_covered"] = covered
+                rung4_kw["rung4_pair_degraded"] = degraded
+
         holdouts.append(
             HoldoutLadderResult(
                 kind=kind,
@@ -224,6 +326,7 @@ def compare_rungs(
                 ),
                 rung3_calibration=calibration_report(p3, s3, y),
                 rung2_band_calibration=calibration_report(p2, s2, y),
+                **rung4_kw,
             )
         )
 
