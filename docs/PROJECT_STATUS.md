@@ -18,6 +18,11 @@ feed), not an independent lineage. No demonstrated betting edge exists.
 
 ## Completed
 
+- **Chemistry model scales to a real player pool.** The additive baseline and
+  the low-rank interaction fit now accumulate every Gram / rhs by `np.bincount`
+  scatter over the 5 players per stint instead of dense `(n × n_players)`
+  matmuls — numerically identical to the old code (~1e-13), no new dependency.
+  `courtgraph fit --evaluate` on 266k stints / 985 players runs in ~16 min.
 - **Real regular-season ingestion (2020-21 → 2024-25).** The SRC-SHUFINSKIY
   importer, generalized to multi-season archives (glob file discovery; rest
   days bounded to the same season; provenance hashes every consumed CSV;
@@ -77,15 +82,20 @@ feed), not an independent lineage. No demonstrated betting edge exists.
 
 ## In progress
 
-- **Real-NBA model validation.** The three leakage-safe splits and the additive
-  ridge RAPM baseline have now run on the 266k regular-season stints: the
-  baseline beats the league mean by ~40–48% (macro) on the unseen-pair and
-  unseen-lineup holdouts and loses on the chronological holdout (distribution
-  shift; only two test seasons). Details and numbers in `docs/CURRENT_TASK.md`.
-  The **low-rank chemistry model does not yet run at this scale** — its dense
-  `O(n_stints · n_players²)` implementation was built for the ~120-player
-  synthetic demo. A sparse-matrix rework is the next task, then the full model
-  vs baseline comparison and the contract's rung-2/3 references.
+- **Real-NBA model validation.** The chemistry model's linear algebra was
+  reworked to sparse `np.bincount` Gram accumulation (numerically identical to
+  the dense path to ~1e-13; `courtgraph fit --evaluate` on 266k stints now runs
+  in ~16 min instead of never finishing). On the real regular-season data:
+  - The additive ridge RAPM baseline beats the league mean by ~40–48% (macro)
+    on the unseen-pair / unseen-lineup holdouts; loses on chronological
+    (distribution shift, two test seasons).
+  - The **rank-3 low-rank interaction model does not beat the additive
+    baseline** — nil on chronological, −0.08% on unseen-pair, −8.4% on
+    unseen-lineup (macro RMSE). A genuine null / unfavourable result; the
+    interaction-L2 selection maxes out shrinkage. Numbers in
+    `docs/CURRENT_TASK.md`.
+  - Next: model-ladder rungs 1 & 3 (shrinkage diagnostics, a hierarchical prior,
+    a wider `l2_player` grid) and explicit pair interactions (rung 4).
 
 ## Not started
 - Recovering the 840 quarantined regular-season games (503 `network_required`,
@@ -126,12 +136,13 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 158 unit tests, Ruff, mypy over 45 source
+The current implementation passes 164 unit tests, Ruff, mypy over 46 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
 --ingest-dir`) on the local five-season regular-season archive: 6,000 games
 found, 5,998 with all three inputs, 5,158 accepted, 840 quarantined, two missing
-the feed; the app's `/api/state` reports matching coverage with real names.
+the feed. The full chemistry model was fit + evaluated on the 266k real stints
+in ~16 min after the sparse rework (was: never finished).
 
 On the default synthetic dataset (17k stints, deterministic) the low-rank model
 beats the additive baseline on macro held-out lineup value (vs the known truth)
@@ -142,11 +153,12 @@ no-signal control produces no improvement.
 
 ## Next verifiable outcome
 
-Rework the chemistry model's linear algebra to sparse (each stint touches 5 of
-~1000 players), so `ChemistryModel.fit` / `evaluate_suite` complete on the 266k
-real stints, then compare the full low-rank model's held-out macro RMSE to the
-additive baseline recorded in `docs/CURRENT_TASK.md` and to the contract's
-rung-2/3 references. Preserve the synthetic generator as a separate control.
+Climb the model ladder from rung 2: a shrinkage / hierarchical (partial-pooling)
+impact model with a real prior and a wider `l2_player` grid, then explicit pair
+interactions (rung 4), each evaluated on the 266k real stints against the
+additive baseline in `docs/CURRENT_TASK.md`. The rank-3 low-rank interaction
+(rung 5) has been tested there and does not beat additive — advanced models stay
+gated on a rung actually improving a preregistered task.
 
 ## Governing document
 
