@@ -1,0 +1,241 @@
+"""Rung 2 vs rung 3: point accuracy and calibration on the leakage-safe holdouts.
+
+Rung 2 is the additive ridge RAPM baseline
+(:class:`~courtgraph.chemistry.baseline.AdditiveRidge`); rung 3 is the
+empirical-Bayes hierarchical model
+(:class:`~courtgraph.chemistry.hierarchical.HierarchicalRidge`).
+
+For each holdout this fits both on the training rows, buckets the test rows into
+groups (held-out lineups / pairs / seasons -- reusing
+:func:`courtgraph.chemistry.evaluate._group_index`), and reports:
+
+* possession-weighted macro / micro RMSE of each model's point prediction;
+* rung-3 interval calibration (coverage 50/80/95, calibration line, width vs
+  error) from its Gaussian posterior + outcome noise;
+* rung-2 interval calibration from an **approximate** block-bootstrap-over-games
+  predictive band (the same hedge the interaction pathway uses).
+
+The research-contract question (section 11) is whether rung 3 beats rung 2 "on
+calibration and stability" -- point RMSE is expected to be about the same.
+
+This module imports from :mod:`courtgraph.chemistry.evaluate` but does not
+modify it; the ``ChemistryModel`` evaluation path is untouched.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
+
+from courtgraph.chemistry.baseline import AdditiveRidge
+from courtgraph.chemistry.calibration import calibration_report
+from courtgraph.chemistry.evaluate import _group_index, _rmse
+from courtgraph.chemistry.features import DesignMatrices, FeatureSpace
+from courtgraph.chemistry.hierarchical import HierarchicalConfig, HierarchicalRidge
+from courtgraph.chemistry.splits import SplitManifest
+from courtgraph.chemistry.stints import StintTable
+
+FloatArray = NDArray[np.float64]
+_HOLDOUTS = ("chronological", "unseen_pair", "unseen_lineup")
+
+
+@dataclass(frozen=True)
+class HoldoutLadderResult:
+    kind: str
+    n_train: int
+    n_test: int
+    n_groups: int
+    rung2_macro_rmse: float
+    rung3_macro_rmse: float
+    rung2_micro_rmse: float
+    rung3_micro_rmse: float
+    rung3_calibration: dict[str, float]
+    rung2_band_calibration: dict[str, float]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "n_train": self.n_train,
+            "n_test": self.n_test,
+            "n_groups": self.n_groups,
+            "rung2_macro_rmse": self.rung2_macro_rmse,
+            "rung3_macro_rmse": self.rung3_macro_rmse,
+            "rung2_micro_rmse": self.rung2_micro_rmse,
+            "rung3_micro_rmse": self.rung3_micro_rmse,
+            "rung3_calibration": dict(self.rung3_calibration),
+            "rung2_band_calibration": dict(self.rung2_band_calibration),
+        }
+
+
+@dataclass(frozen=True)
+class LadderComparison:
+    variance_components: dict[str, Any]
+    holdouts: tuple[HoldoutLadderResult, ...]
+    notes: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "variance_components": dict(self.variance_components),
+            "holdouts": [h.as_dict() for h in self.holdouts],
+            "notes": list(self.notes),
+        }
+
+
+def _group_realized(
+    design: DesignMatrices, groups: dict[str, list[int]]
+) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for gid, rows in groups.items():
+        idx = np.asarray(rows, dtype=np.int64)
+        weight = design.weight[idx]
+        out[gid] = float(np.average(design.y[idx], weights=weight))
+    return out
+
+
+def _rung2_band(
+    train_table: StintTable,
+    space: FeatureSpace,
+    train_design: DesignMatrices,
+    test_design: DesignMatrices,
+    groups: dict[str, list[int]],
+    base: AdditiveRidge,
+    *,
+    seed: int,
+    n_boot: int,
+) -> dict[str, tuple[float, float]]:
+    """Rung-2 group point + an approximate block-bootstrap-over-games band.
+
+    The point is the base fit's possession-weighted group prediction; the SD is
+    ``sqrt(var_b(bootstrap group predictions) + sigma_hat^2 / sum_w)`` with
+    ``l2_player`` held at the base pick.
+    """
+
+    keys = list(groups)
+    point = {}
+    per_row = base.predict(test_design)
+    for gid in keys:
+        idx = np.asarray(groups[gid], dtype=np.int64)
+        weight = test_design.weight[idx]
+        point[gid] = float(np.average(per_row[idx], weights=weight))
+
+    resid = base.predict(train_design) - train_design.y
+    sigma2_hat = float(np.average(resid**2, weights=train_design.weight))
+
+    if n_boot <= 0:
+        return {gid: (point[gid], float(np.sqrt(sigma2_hat))) for gid in keys}
+
+    games = np.array(train_design.game_ids)
+    unique_games = np.array(sorted(set(train_design.game_ids)))
+    game_pos = {g: i for i, g in enumerate(unique_games)}
+    row_game = np.array([game_pos[g] for g in games])
+    rng = np.random.default_rng(seed)
+
+    columns = np.zeros((n_boot, len(keys)))
+    for b in range(n_boot):
+        counts = np.bincount(
+            rng.integers(0, len(unique_games), size=len(unique_games)),
+            minlength=len(unique_games),
+        ).astype(np.float64)
+        weight_b = train_design.weight * counts[row_game]
+        design_b = replace(train_design, weight=weight_b)
+        model_b = AdditiveRidge.fit(
+            design_b, space, l2_player=base.l2_player, l2_context=base.l2_context
+        )
+        pred_b = model_b.predict(test_design)
+        for gi, gid in enumerate(keys):
+            idx = np.asarray(groups[gid], dtype=np.int64)
+            weight = test_design.weight[idx]
+            columns[b, gi] = np.average(pred_b[idx], weights=weight)
+
+    out: dict[str, tuple[float, float]] = {}
+    for gi, gid in enumerate(keys):
+        idx = np.asarray(groups[gid], dtype=np.int64)
+        var_boot = float(np.var(columns[:, gi], ddof=1))
+        sd = float(np.sqrt(var_boot + sigma2_hat / test_design.weight[idx].sum()))
+        out[gid] = (point[gid], sd)
+    return out
+
+
+def compare_rungs(
+    table: StintTable,
+    splits: dict[str, SplitManifest],
+    *,
+    seed: int = 0,
+    n_boot: int = 150,
+    config: HierarchicalConfig | None = None,
+) -> LadderComparison:
+    space_all = FeatureSpace.from_training(table)
+    global_rung3 = HierarchicalRidge.fit(
+        space_all.build(table), space_all, config=config
+    )
+
+    holdouts: list[HoldoutLadderResult] = []
+    for kind in _HOLDOUTS:
+        manifest = splits[kind]
+        train_table = manifest.train_table(table)
+        test_table = manifest.test_table(table)
+        space = FeatureSpace.from_training(train_table)
+        train_design = space.build(train_table)
+        test_design = space.build(test_table)
+
+        rung2 = AdditiveRidge.fit(train_design, space)
+        rung3 = HierarchicalRidge.fit(train_design, space, config=config)
+
+        groups = _group_index(test_table, manifest)
+        realized = _group_realized(test_design, groups)
+        keys = list(groups)
+
+        r3 = rung3.group_predictive(
+            test_design, {g: np.asarray(groups[g], dtype=np.int64) for g in keys}
+        )
+        r2 = _rung2_band(
+            train_table,
+            space,
+            train_design,
+            test_design,
+            groups,
+            rung2,
+            seed=seed,
+            n_boot=n_boot,
+        )
+
+        y = np.array([realized[k] for k in keys])
+        p2 = np.array([r2[k][0] for k in keys])
+        s2 = np.array([r2[k][1] for k in keys])
+        p3 = np.array([r3[k][0] for k in keys])
+        s3 = np.array([r3[k][1] for k in keys])
+
+        holdouts.append(
+            HoldoutLadderResult(
+                kind=kind,
+                n_train=len(train_table),
+                n_test=len(test_table),
+                n_groups=len(keys),
+                rung2_macro_rmse=_rmse(p2, y),
+                rung3_macro_rmse=_rmse(p3, y),
+                rung2_micro_rmse=_rmse(
+                    rung2.predict(test_design), test_design.y, test_design.weight
+                ),
+                rung3_micro_rmse=_rmse(
+                    rung3.predict(test_design), test_design.y, test_design.weight
+                ),
+                rung3_calibration=calibration_report(p3, s3, y),
+                rung2_band_calibration=calibration_report(p2, s2, y),
+            )
+        )
+
+    notes = (
+        "Rung-2 intervals are an approximate block-bootstrap-over-games band "
+        "with l2_player held at the base pick; rung-3 intervals are the Gaussian "
+        "posterior plus outcome noise (empirical Bayes, approximate).",
+        "EM recovers the realised player-pool effect SD, not the generative "
+        "SyntheticConfig scale.",
+    )
+    return LadderComparison(
+        variance_components=global_rung3.variance_components(),
+        holdouts=tuple(holdouts),
+        notes=notes,
+    )

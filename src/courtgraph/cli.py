@@ -93,6 +93,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fit.add_argument("--json", action="store_true", help="print result as JSON")
 
+    baselines = subparsers.add_parser(
+        "baselines",
+        help="fit rung-2 (additive RAPM) and rung-3 (hierarchical EB) and "
+        "compare point accuracy and interval calibration on the leakage-safe "
+        "holdouts",
+    )
+    baselines.add_argument(
+        "--input", type=Path, required=True, help="stint file (.jsonl/.json)"
+    )
+    baselines.add_argument(
+        "--bootstrap",
+        type=int,
+        default=150,
+        help="rung-2 predictive-band resamples (0 to skip the band)",
+    )
+    baselines.add_argument("--seed", type=int, default=0, help="bootstrap seed")
+    baselines.add_argument("--json", action="store_true", help="print result as JSON")
+
     ingest = subparsers.add_parser(
         "ingest",
         help="convert an offline NBA snapshot into validated stint records",
@@ -344,6 +362,42 @@ def _cmd_fit(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_baselines(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import run_baselines
+
+    if args.bootstrap < 0:
+        print("baselines: --bootstrap must be >= 0", file=stream)
+        return 2
+    comparison = run_baselines(args.input, seed=args.seed, n_boot=args.bootstrap)
+    if args.json:
+        print(json.dumps(comparison.as_dict(), indent=2, sort_keys=True), file=stream)
+        return 0
+
+    vc = comparison.variance_components
+    conv = "converged" if vc["converged"] else "NOT converged"
+    print(
+        f"rung-3 hierarchical EB: sigma={vc['sigma']:.2f}  "
+        f"tau_off={vc['tau_off']:.2f}  tau_def={vc['tau_def']:.2f}  "
+        f"({vc['n_iters']} EM iters, {conv})",
+        file=stream,
+    )
+    header = (
+        f"  {'holdout':<14} {'groups':>6}  {'r2 macro':>9} {'r3 macro':>9}  "
+        f"{'r3 cov50/80/95':>16}  {'r3 slope':>8}"
+    )
+    print(header, file=stream)
+    for h in comparison.holdouts:
+        cal = h.rung3_calibration
+        print(
+            f"  {h.kind:<14} {h.n_groups:>6}  {h.rung2_macro_rmse:>9.3f} "
+            f"{h.rung3_macro_rmse:>9.3f}  "
+            f"{cal['coverage_50']:>4.2f}/{cal['coverage_80']:.2f}/"
+            f"{cal['coverage_95']:.2f}   {cal['slope']:>8.2f}",
+            file=stream,
+        )
+    return 0
+
+
 def _cmd_ingest(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.ingest.pipeline import run_ingest
     from courtgraph.ingest.policy import IngestPolicy
@@ -500,6 +554,7 @@ _COMMANDS = {
     "ingest": _cmd_ingest,
     "snapshot-from-shufinskiy": _cmd_snapshot_from_shufinskiy,
     "fit": _cmd_fit,
+    "baselines": _cmd_baselines,
     "predict": _cmd_predict,
 }
 

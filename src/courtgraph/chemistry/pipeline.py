@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from courtgraph.chemistry.baseline_ladder import LadderComparison
 
 from courtgraph.chemistry.artifact import load_model, save_model
 from courtgraph.chemistry.chemistry_model import (
@@ -170,6 +173,24 @@ def evaluate_model_file(
     table = read_stints(input_path)
     splits = make_all_splits(table)
     return evaluate_suite(table, splits, config=config, truth=None)
+
+
+def run_baselines(
+    input_path: str | Path, *, seed: int = 0, n_boot: int = 150
+) -> LadderComparison:
+    """Fit rung 2 (additive RAPM) and rung 3 (hierarchical EB) and compare
+    point accuracy + interval calibration on the leakage-safe holdouts."""
+
+    from courtgraph.chemistry.baseline_ladder import compare_rungs
+
+    table = read_stints(input_path)
+    if len(table) < 50:
+        raise ValueError(
+            f"{input_path}: only {len(table)} stints; need a substantially larger "
+            "table to compare the baselines"
+        )
+    splits = make_all_splits(table)
+    return compare_rungs(table, splits, seed=seed, n_boot=n_boot)
 
 
 @dataclass(frozen=True)
