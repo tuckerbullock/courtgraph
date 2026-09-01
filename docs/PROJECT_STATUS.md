@@ -75,11 +75,19 @@ feed), not an independent lineage. No demonstrated betting edge exists.
   - `stints.py` / `pipeline.py` — emits `courtgraph.chemistry.stints` records (non-contiguous same-lineup spells never merged), plus `quarantine.jsonl` and a full `manifest.json` audit trail. `courtgraph ingest --snapshot-dir PATH --out-dir DIR`.
   - `tests/test_nba_*` — hand-authored, NBA-shaped fixtures parsed by real `pbpstats`; covers ordinary play, offensive rebounds, free throws + technical, substitutions, overtime, malformed inputs, reconciliation failure, missing files, immutability, and no-network proof.
 
-## Not started
+## In progress
 
-- **Real-NBA model validation** — leakage-safe splits + ridge RAPM baseline +
-  low-rank model on the 266k regular-season stints, vs the contract's rung-2/3
-  references. Data is loaded; nothing is fit yet.
+- **Real-NBA model validation.** The three leakage-safe splits and the additive
+  ridge RAPM baseline have now run on the 266k regular-season stints: the
+  baseline beats the league mean by ~40–48% (macro) on the unseen-pair and
+  unseen-lineup holdouts and loses on the chronological holdout (distribution
+  shift; only two test seasons). Details and numbers in `docs/CURRENT_TASK.md`.
+  The **low-rank chemistry model does not yet run at this scale** — its dense
+  `O(n_stints · n_players²)` implementation was built for the ~120-player
+  synthetic demo. A sparse-matrix rework is the next task, then the full model
+  vs baseline comparison and the contract's rung-2/3 references.
+
+## Not started
 - Recovering the 840 quarantined regular-season games (503 `network_required`,
   170 pbpstats back-to-back exceptions, 93 score-reconciliation failures);
   nullable `days_rest` (stint schema v3) for the 68 season-opener quarantines.
@@ -134,11 +142,11 @@ no-signal control produces no improvement.
 
 ## Next verifiable outcome
 
-Run the leakage-safe splits (chronological, unseen-pair, unseen-lineup), the
-additive ridge RAPM baseline, and the low-rank chemistry model on the 266k
-real regular-season stints, and compare held-out prediction to the contract's
-rung-2/3 reference baselines. Preserve the synthetic generator as a separate
-control; do not replace it or present its estimates as NBA forecasts.
+Rework the chemistry model's linear algebra to sparse (each stint touches 5 of
+~1000 players), so `ChemistryModel.fit` / `evaluate_suite` complete on the 266k
+real stints, then compare the full low-rank model's held-out macro RMSE to the
+additive baseline recorded in `docs/CURRENT_TASK.md` and to the contract's
+rung-2/3 references. Preserve the synthetic generator as a separate control.
 
 ## Governing document
 
