@@ -18,11 +18,22 @@ outcome (§7, §26).
 
 **On 266,518 real regular-season stints (2020-21 … 2024-25) and the held-out
 2024-25 playoffs, transferable teammate-pair / lineup chemistry — as measured
-by every model form on the ladder through rung 5 — is NOT SUPPORTED.** No
-interaction rung improves held-out prediction over hierarchical additive
-talent on any of four leakage-safe evaluation tasks, and the explicit per-pair
-terms are statistically indistinguishable from a placebo with the same
-parameter count.
+by the identity-keyed model forms on the ladder through rung 5 — is NOT
+SUPPORTED.** Rungs 4 (explicit per-pair) and 5 (low-rank) do not improve
+held-out prediction over hierarchical additive talent on any of four
+leakage-safe evaluation tasks, and the explicit per-pair terms are
+statistically indistinguishable from a placebo with the same parameter count.
+
+**One later parameterisation is a weak positive.** The **role-conditioned**
+model (`courtgraph roles`, 2026-09-01) — interaction keyed by the pair of
+*role clusters* the two players belong to, not by identity, so 15 pooled
+parameters replace ~2,357 thin per-identity ones — beats the rung-3 baseline
+**and** a permuted-role placebo by ~1 % on the two structural holdouts
+(unseen-pair, unseen-lineup). That is small, at the edge of what 40–60 group
+means resolve, with no significance test yet, and it *degrades* under temporal
+drift. It does not clear the contract's §17.1 usefulness bar, but it is the
+first form to beat both baseline and placebo out of sample, and it warrants a
+better-powered follow-up. See "Role-conditioned interaction" below.
 
 This is **not** a causal claim that no two players affect each other. It is a
 predictive statement about the modelled forms of interaction at this data
@@ -111,6 +122,50 @@ established reference baseline, with calibrated uncertainty that holds out of
 phase. Both models fail the chronological holdout's mean (systematic
 under-prediction under era/roster drift; a shared, documented limitation).
 
+## Role-conditioned interaction — the weak positive
+
+`courtgraph roles` (2026-09-01). The interaction term is keyed by the pair of
+**role clusters** the two offensive players belong to, not by player identity.
+Role clusters come from deterministic k-means over a standardised offensive
+profile (usage, three-rate, rim-rate, assist/100, ft-rate, oreb/100) derived
+from the play-by-play + shot chart (`courtgraph player-features`). With K = 5
+that is 15 pooled interaction parameters, each backed by thousands of stints,
+versus rung 4's ~2,357 thin per-identity pairs. The clustering is fit once on
+the full profile set (role features only, never lineup value — outcome-blind)
+and reused per fold. Placebo: a **permuted-role** fit (same cluster sizes,
+players' role labels shuffled).
+
+The five clusters on the real data are recognisable — movement shooter
+(3-rate .62), rim-running big (rim .67), balanced wing, pass-first playmaker
+(ast/100 9.1), high-usage lead creator (usage .34).
+
+Held-out macro RMSE (points per 100):
+
+| holdout | groups | rung 3 | **role** | permuted-role placebo |
+|---|---|---|---|---|
+| chronological | 13 | **3.55** | 4.49 | 3.58 |
+| unseen_pair | 40 | 19.20 | **19.07** | 19.21 |
+| unseen_lineup | 60 | 5.26 | **5.19** | 5.27 |
+
+On the two **structural** holdouts role beats rung 3 by 0.7 % / 1.3 % and
+beats its placebo by 0.7 % / 1.4 %, with clean calibration (z_sd ≈ 1.0). This
+is the **first** interaction parameterisation to beat both baseline and
+placebo out of sample. But: it is ~1 % on 40–60 group means, with no bootstrap
+CI on the delta; and on the **chronological** holdout role is clearly *worse*
+than rung 3 and its placebo (4.49; calibration z_mean 3.3) — under era/roster
+drift the role terms hurt.
+
+The fitted 5×5 role-pair surplus matrix (τ_role ≈ 1.0 pts/100, in-sample) is
+interpretable: the high-usage creator paired with a rim-running big (+1.82) or
+a shooter (+1.40) shows the largest surplus, while two ball-dominant creators
+(+0.79) is the smallest such pairing — "star + complementary piece" beats
+"star + star". This is a plausible story, but the held-out numbers above, not
+the in-sample matrix, are the evidence.
+
+**Status: suggestive, not established.** Does not clear §17.1. The
+better-powered confirmation — widen the structural holdouts to ~120 groups,
+bootstrap the role−rung-3 delta, sweep K — is the natural next step.
+
 ## What this establishes — and what it does not
 
 **Supported:**
@@ -140,10 +195,11 @@ under-prediction under era/roster drift; a shared, documented limitation).
 
 ## What would change the verdict
 
-A role-conditioned interaction model that beats rung 3 out of sample; a direct
-per-player "lifts teammates' individual production" estimate (needs per-player
-on-court production, a data extension); possession-level rather than
-stint-level outcomes; substantially more seasons.
+A better-powered confirmation of the role-conditioned result (it is the weak
+positive above); a direct per-player "lifts teammates' individual production"
+estimate (needs per-player on-court production, a data extension);
+possession-level or mechanistic (shot-quality, turnover-rate) outcomes rather
+than stint points/100; substantially more seasons.
 
 ## Reproduce
 
@@ -153,6 +209,14 @@ courtgraph transport \
   --train data/nba_snapshots/rs_2020_2024/out/stints.jsonl \
   --test  data/nba_snapshots/all_2025_playoffs/out/stints.jsonl \
   --bootstrap 120 --rung4 --json
+courtgraph player-features \
+  --snapshot-dir data/nba_snapshots/rs_2020_2024/snap \
+  --stints data/nba_snapshots/rs_2020_2024/out/stints.jsonl \
+  --out data/nba_snapshots/rs_2020_2024/player_profiles.jsonl
+courtgraph roles \
+  --input data/nba_snapshots/rs_2020_2024/out/stints.jsonl \
+  --profiles data/nba_snapshots/rs_2020_2024/player_profiles.jsonl \
+  --clusters 5 --bootstrap 120 --json
 ```
 
 Result JSONs are gitignored under `data/nba_snapshots/`. Rung-5 numbers:

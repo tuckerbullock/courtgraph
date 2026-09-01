@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-09-01 (playoffs transport test)
+Last updated: 2026-09-01 (role-conditioned interaction — first non-null)
 
 ## Current phase
 
@@ -152,11 +152,19 @@ feed), not an independent lineage. No demonstrated betting edge exists.
     record — the verdict, the models, the four evaluation tasks, the results,
     and what the null does and does not establish (talent absorption, no
     features, the noise floor, dynamic effects out of scope).
-  - Next: the master plan's **§45 player-lift** backlog item — quantify a
-    player's asymmetric effect on teammates' *individual* production (Phase A:
-    a pooled lift scalar on lineup value; Phase B: a per-player on-court
-    production model, needs an ingest extension). Also open: role-conditioned
-    interactions (§21).
+  - **Role-conditioned interaction — the first non-null.** `courtgraph
+    player-features` derives per-(player, season) role/skill profiles from the
+    snapshot's play-by-play + shot chart (no new data); `courtgraph roles`
+    keys the interaction on **role-cluster pair** (K=5 → 15 pooled params) and
+    compares against rung 3 and a permuted-role placebo. On the two structural
+    holdouts role beats rung 3 by 0.7 % / 1.3 % **and** beats its placebo by
+    0.7 % / 1.4 % — small (40–60 group means, no CI yet) and it degrades under
+    temporal drift, but the first form to beat baseline and placebo out of
+    sample. In-sample role-pair matrix: "star + complementary piece" (+1.4 to
+    +1.8) beats "star + star" (+0.8). `docs/CURRENT_TASK.md` has the numbers.
+  - Next: a better-powered confirmation of the role result (wider holdouts,
+    bootstrap the role−rung-3 delta, K sweep), or candidate idea #2
+    (mechanistic outcomes). Also open: §45 player-lift; §21 role features.
 
 ## Not started
 - Recovering the 840 quarantined regular-season games (503 `network_required`,
@@ -197,7 +205,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 200 unit tests, Ruff, mypy over 55 source
+The current implementation passes 210 unit tests, Ruff, mypy over 63 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
 --ingest-dir`) on the local five-season regular-season archive: 6,000 games
@@ -224,12 +232,16 @@ near-nominal coverage. **No interaction rung beats it on any task**: rung 5
 (low-rank) and rung 4 (explicit pairs) both fail to improve held-out
 prediction; the rung-4 pair terms are indistinguishable from a placebo on a
 well-powered pair-level test in-sample (668 pair groups) and in the playoffs
-(476 pair groups). `RESEARCH_CONTRACT.md` §26's "successive models show no
-transferable interaction signal" applies; its "split sizes too small" caveat is
-resolved. The next step is **direction #1 — write up the "not supported"
-finding** as a standing findings document, then direction #4 (role-conditioned
-interactions; a new "player lifts teammates" backlog item). Neural rungs 6–7
-stay gated — the interaction question has not passed at rungs 0–5.
+(476 pair groups). The null is written up in
+[`docs/INTERACTION_FINDINGS.md`](INTERACTION_FINDINGS.md).
+
+**The role-conditioned model (`courtgraph roles`) is the first non-null:** it
+beats rung 3 **and** a permuted-role placebo by ~1 % on the two structural
+holdouts (40 / 60 group means, no CI yet), while degrading under temporal
+drift. Suggestive, not established — it does not clear §17.1. The next
+verifiable outcome is a **better-powered confirmation** — widen the structural
+holdouts to ~120 groups, bootstrap the role−rung-3 delta, sweep K — or
+candidate idea #2 (mechanistic outcomes). Neural rungs 6–7 stay gated.
 
 ## Governing document
 
