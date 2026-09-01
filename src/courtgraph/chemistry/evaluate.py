@@ -150,9 +150,11 @@ def _group_index(
                     key = pair_id(ids[a], ids[b])
                     if key in held:
                         groups.setdefault(key, []).append(i)
-    else:  # chronological -- bucket by season so "macro" is still meaningful
+    else:
+        # chronological -- bucket by calendar month (YYYY-MM) so "macro" is over
+        # ~a dozen groups, not the two or three test seasons.
         for i, stint in enumerate(test_table):
-            groups.setdefault(stint.season, []).append(i)
+            groups.setdefault(stint.game_date[:7], []).append(i)
     return groups
 
 
