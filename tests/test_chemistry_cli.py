@@ -229,6 +229,42 @@ class ChemistryCommandTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             predict_lineup(self.demo.model_path, [1, 2, 3, 4], [5, 6, 7, 8, 9])
 
+    def test_baselines_compares_rung2_and_rung3_calibration(self) -> None:
+        out = StringIO()
+        code = main(
+            [
+                "baselines",
+                "--input",
+                str(self.demo.stints_path),
+                "--bootstrap",
+                "10",
+                "--json",
+            ],
+            output=out,
+        )
+        self.assertEqual(code, 0)
+        payload = json.loads(out.getvalue())
+        self.assertEqual(len(payload["holdouts"]), 3)
+        vc = payload["variance_components"]
+        self.assertGreater(vc["tau_off"], 0.0)
+        self.assertGreater(vc["sigma"], 0.0)
+        first = payload["holdouts"][0]
+        self.assertIn("coverage_95", first["rung3_calibration"])
+        self.assertIn("rung2_macro_rmse", first)
+
+    def test_baselines_rejects_negative_bootstrap(self) -> None:
+        code = main(
+            [
+                "baselines",
+                "--input",
+                str(self.demo.stints_path),
+                "--bootstrap",
+                "-1",
+            ],
+            output=StringIO(),
+        )
+        self.assertEqual(code, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

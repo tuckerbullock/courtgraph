@@ -18,6 +18,14 @@ feed), not an independent lineage. No demonstrated betting edge exists.
 
 ## Completed
 
+- **Model ladder rung 3 — empirical-Bayes hierarchical player model**
+  (`src/courtgraph/chemistry/hierarchical.py`, `courtgraph baselines`): variance
+  components learned by EM (not a CV scalar), per-lineup Gaussian predictive
+  intervals, and a calibration module (`calibration.py`) with the contract's
+  coverage / calibration-line / width-vs-error diagnostics. Standalone —
+  `ChemistryModel` / `evaluate.py` untouched. It did not out-calibrate rung 2 on
+  the real data (see *In progress*), but it is the reference the chemistry
+  claims are judged against.
 - **Chemistry model scales to a real player pool.** The additive baseline and
   the low-rank interaction fit now accumulate every Gram / rhs by `np.bincount`
   scatter over the 5 players per stint instead of dense `(n × n_players)`
@@ -89,13 +97,20 @@ feed), not an independent lineage. No demonstrated betting edge exists.
   - The additive ridge RAPM baseline beats the league mean by ~40–48% (macro)
     on the unseen-pair / unseen-lineup holdouts; loses on chronological
     (distribution shift, two test seasons).
-  - The **rank-3 low-rank interaction model does not beat the additive
+  - The **rank-5 low-rank interaction model does not beat the additive
     baseline** — nil on chronological, −0.08% on unseen-pair, −8.4% on
-    unseen-lineup (macro RMSE). A genuine null / unfavourable result; the
-    interaction-L2 selection maxes out shrinkage. Numbers in
-    `docs/CURRENT_TASK.md`.
-  - Next: model-ladder rungs 1 & 3 (shrinkage diagnostics, a hierarchical prior,
-    a wider `l2_player` grid) and explicit pair interactions (rung 4).
+    unseen-lineup (macro RMSE). A genuine null / unfavourable result.
+  - **Rung 3 (empirical-Bayes hierarchical player model)** is now built and is
+    the contract's reference baseline (`courtgraph baselines`). Its EM learns a
+    heavy data-driven shrinkage (`σ²/τ_off² ≈ 2580`): better point RMSE than
+    rung 2 on chronological / unseen-lineup, much worse on unseen-pair (one
+    variance component can't serve a holdout that wants light pooling and two
+    that want heavy). Both models under-cover the structural holdouts, and the
+    macro group counts (2 / 8 / 12) are too small to judge calibration — a §26
+    stop condition. Numbers in `docs/CURRENT_TASK.md`.
+  - Next (a fork): widen the leakage-safe holdouts so the comparison has enough
+    groups; or rung 4 (explicit pair interactions), which is what the single-
+    variance-component ceiling calls for.
 
 ## Not started
 - Recovering the 840 quarantined regular-season games (503 `network_required`,
@@ -136,7 +151,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 164 unit tests, Ruff, mypy over 46 source
+The current implementation passes 179 unit tests, Ruff, mypy over 51 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
 --ingest-dir`) on the local five-season regular-season archive: 6,000 games
@@ -153,12 +168,14 @@ no-signal control produces no improvement.
 
 ## Next verifiable outcome
 
-Climb the model ladder from rung 2: a shrinkage / hierarchical (partial-pooling)
-impact model with a real prior and a wider `l2_player` grid, then explicit pair
-interactions (rung 4), each evaluated on the 266k real stints against the
-additive baseline in `docs/CURRENT_TASK.md`. The rank-3 low-rank interaction
-(rung 5) has been tested there and does not beat additive — advanced models stay
-gated on a rung actually improving a preregistered task.
+Rungs 2, 3, and 5 have now been fit and evaluated on the 266k real stints
+(`docs/CURRENT_TASK.md`): rung 5 (low-rank interaction) does not beat rung 2,
+and rung 3 (hierarchical EB) does not out-calibrate it — with the macro holdout
+group counts (2 / 8 / 12) too small to judge calibration reliably. The next
+verifiable step is to **widen the leakage-safe holdouts** (more held-out pairs /
+lineups; rolling-origin chronological folds) so any rung-N comparison is
+conclusive, then rung 4 (explicit teammate-pair interactions). Advanced models
+stay gated on a rung actually improving a preregistered task.
 
 ## Governing document
 

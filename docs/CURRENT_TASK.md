@@ -4,93 +4,113 @@ Last updated: 2026-09-01
 
 ## State
 
-Done — the chemistry model was reworked to sparse linear algebra so it runs at
-NBA scale, and the **full low-rank interaction model was fit and evaluated
-against the additive baseline on the 266,518 real regular-season stints**.
-Branch `task/chemistry-sparse-scale` off `origin/main` (`a4c04f0`). Committed
-and pushed, PR open.
+Done — **model-ladder rung 3 (empirical-Bayes hierarchical player model) built,
+tested, and run against rung 2 on the 266k real regular-season stints**. Branch
+`task/rung3-hierarchical` off `origin/main` (`139ab01`). Committed and pushed,
+PR open.
 
-**Result: the low-rank chemistry model does not beat the additive baseline on
-this real regular-season data.** A genuine null / unfavourable result, kept per
-`RESEARCH_CONTRACT.md` ("Preserve failed, null, and unfavorable experiments").
+Rung 3 is now the reference baseline `RESEARCH_CONTRACT.md` §17 requires. **On
+this data it does not cleanly beat rung 2 "on calibration and stability"**
+(§11 exit criterion) — and the leakage-safe holdouts turn out to have too few
+macro groups (2 / 8 / 12) for the calibration comparison to be conclusive, a
+§26 stop condition. Both are reportable findings; both are preserved.
 
-## The sparse rework (`ed3aa2c`, `71ae257`)
+## What was built (`23dd20e`, `49cc608`)
 
-`ChemistryModel.fit` used dense `(n_stints × n_players)` one-hots and
-`O(n · n_players²)` Gram matmuls, plus a ~6 GB `(n · n_players · rank)` buffer
-per ALS half-sweep — one fit did not finish in over an hour at 985 players.
+- **`src/courtgraph/chemistry/hierarchical.py`** — `HierarchicalRidge`: the
+  rung-2 additive design (`y_s ≈ Cθ_c + Σα_i − Σβ_j`) with the single CV-picked
+  `l2_player` replaced by variance components `(σ², τ_off², τ_def²)` learned by
+  EM. Reuses `baseline._normal_equations` for the `(n_context+2P)` weighted Gram
+  (built once); each EM step re-solves `M = gram/σ² + diag(Λ)` by Cholesky and
+  updates the components by the standard Gaussian-LMM EM (the residual-variance
+  trace term is `tr(gram·V) = σ²(d − Σλ_k V_kk)`, diagonal-only). Marginal
+  log-likelihood monitored for monotonicity. Static players, Normal prior, pure
+  numpy, no RNG — deterministic. `group_predictive` propagates the Gaussian
+  posterior (`g'M⁻¹g`) + outcome noise (`σ²/Σw`) to a per-group interval.
+  Validated on well-specified synthetic: recovers the realised player-pool
+  effect SD to ~2%, log-lik monotone, group coverage 0.50/0.81/0.96 for nominal
+  50/80/95.
+- **`src/courtgraph/chemistry/calibration.py`** — coverage @50/80/95, WLS
+  calibration line (slope→1, intercept→0), standardized-residual moments,
+  width-vs-error correlation. The contract's named calibration currency.
+- **`src/courtgraph/chemistry/baseline_ladder.py`** + `courtgraph baselines` —
+  per holdout, fit rung 2 + rung 3, bucket test rows with
+  `evaluate._group_index`, report both models' macro/micro RMSE and interval
+  calibration (rung 2 gets an approximate block-bootstrap-over-games band).
+  `evaluate.py` / `ChemistryModel` and their tests are **untouched**.
+- 179 tests (+15); ruff / mypy / dependency-free path clean.
 
-Each stint touches 5 of ~985 players, so every Gram / rhs is now accumulated by
-scattering the 25 (player, player) index pairs per row with `np.bincount`
-(`O(n · 25 · rank²)`), then a direct `np.linalg.solve` on the cheaply-built
-dense Gram. **Same math, pure numpy, no new dependency, no artifact-format
-change.**
+## Result — rung 2 vs rung 3 on the 266k real stints
 
-- `features.DesignMatrices` drops `offense_onehot` / `defense_onehot` (no
-  consumer outside `baseline.py`).
-- `baseline._normal_equations` (`_pair_gram` / `_ctx_gram` / `_idx_rhs`) replaces
-  `_assemble`; `_select_l2_player` builds each fold's Gram once and re-solves per
-  grid value; `predict` / `decompose_row` use a padded index gather.
-- `chemistry_model.LowRankInteraction.fit`'s `half_step` accumulates the
-  `(n_players·rank)²` Gram by `bincount`; ALS loop / seed / standardization /
-  convergence check unchanged.
+`courtgraph baselines --input …/rs_2020_2024/out/stints.jsonl --bootstrap 150`
+(~15 min). Result JSON: `data/nba_snapshots/rs_2020_2024/chem_rung3_eval.json`
+(gitignored).
 
-Equivalence, checked three ways:
-- 164 tests pass, including `test_model_fit_is_deterministic` and the recovery /
-  no-spurious-chemistry guards (unchanged).
-- New `SparseGramEquivalenceTests`: sparse Gram / rhs / predict == an
-  independent dense one-hot reference to `atol ≤ 1e-9`.
-- Pre- vs post-rework full fit on `recovery_synthetic`: every coefficient agrees
-  to **max |Δ| ≈ 1e-13**; identical discrete L2 picks.
-- New `test_chemistry_scale.py`: ~19k stints / 330 players fits in ~19 s,
-  `tracemalloc` peak < 1 GB.
+**Variance components** (EM, 78 iters, converged): `σ = 118.9`,
+`τ_off = 2.34`, `τ_def = 1.83` ppp100 — the additively-separable player-impact
+signal is small. Implied shrinkage `σ²/τ_off² ≈ 2580` (vs rung-2's CV pick of
+`l2_player = 100`).
 
-Timing on the real data: `courtgraph fit --evaluate --bootstrap 0` on 266k
-stints / 985 players ran in **~16 min** (was: never finished).
+**Held-out macro RMSE** (possession-weighted group means, points per 100):
 
-## Full model vs additive baseline — 266k real regular-season stints
-
-Held-out **macro** RMSE (possession-weighted group means — the contract
-headline), points per 100 possessions. `courtgraph fit
-data/nba_snapshots/rs_2020_2024/out/stints.jsonl --evaluate --bootstrap 0`;
-result in `data/nba_snapshots/rs_2020_2024/chem_full_eval.json` (gitignored).
-
-| holdout | additive | full (low-rank) | improvement |
+| holdout | groups | rung 2 | rung 3 |
 |---|---|---|---|
-| chronological | 3.523 | 3.523 | **+0.0%** (nil) |
-| unseen_pair | 3.738 | 3.741 | **−0.08%** |
-| unseen_lineup | 4.349 | 4.712 | **−8.4%** |
+| chronological | 2 | 3.523 | **3.409** |
+| unseen_pair | 8 | **3.738** | 5.545 |
+| unseen_lineup | 12 | 4.349 | **4.058** |
 
-- The full-run interaction-L2 selection picked `l2 = 200` — the **top** of the
-  grid `(8, 25, 70, 200)`, i.e. "no interaction helps, shrink it toward zero"
-  (`_select_interaction`'s documented default). Even so the residual interaction
-  term is slightly to clearly harmful on the pair / lineup holdouts.
-- `evaluate_suite` refits per holdout; on the unseen-lineup training split the
-  internal CV apparently let a smaller L2 through, and the resulting interaction
-  overfit — held-out unseen lineups are 8.4% worse than additive-only. This is
-  the model getting fooled by a weak / absent signal, which is exactly what the
-  unseen-lineup gate exists to catch.
-- Micro (stint) RMSE moves < 0.05 ppp100 in all three — no meaningful change.
+Rung 3's data-driven heavy shrinkage helps chronological and unseen-lineup and
+**badly hurts unseen-pair** — the same tension the earlier `l2_player`-grid
+sweep found: the unseen-pair holdout's own optimum is *light* shrinkage
+(`l2 ≈ 10`), everything else wants heavy, and **one learned variance component
+cannot serve both.** Micro (stint) RMSE is within 0.35 ppp100 across all three.
 
-**Interpretation:** on 266k real regular-season stints, a rank-3 provision/need
-low-rank interaction adds **no** held-out predictive signal beyond additive
-offense/defense talent, and mildly hurts on unseen lineups. This does not prove
-"NBA lineup chemistry does not exist" — it means *this model, at this rank, on
-this data, with this evaluation* finds none. Consistent with the literature that
-lineup non-additivity is a small residual. Next moves are on the contract's
-ladder, not a bigger neural model.
+**Calibration** (rung 3 posterior vs rung 2 bootstrap band):
 
-## Next candidate tasks (not started)
+| holdout | rung3 cov 50/80/95 | rung3 slope | rung2-band cov 50/80/95 |
+|---|---|---|---|
+| chronological | 0.00 / 0.00 / 0.00 | −0.32 | 0.00 / 0.50 / 0.50 |
+| unseen_pair | 0.50 / 0.50 / 0.62 | 1.32 | 0.38 / 0.62 / 0.88 |
+| unseen_lineup | 0.33 / 0.58 / **0.92** | 0.57 | 0.42 / 0.58 / 0.75 |
 
-1. **Rungs 1 & 3** — descriptive/shrinkage diagnostics and a hierarchical
-   (partial-pooling) impact model with a proper prior, and a wider `l2_player`
-   grid; the current ridge selection maxes out shrinkage (`l2_player = 100`)
-   on real data, suggesting the flat prior is too weak.
-2. **Explicit pair interactions (rung 4)** before more low-rank — measure
-   whether *any* non-additive parameterization beats additive on unseen pairs.
-3. Recover the 840 quarantined games (503 `network_required`); nullable
-   `days_rest` (schema v3) for the 68 season-opener quarantines.
-4. Playoffs transport test — the 2024-25 playoffs archive is still held out.
+- **Both models under-cover the structural holdouts.** Rung 3's intervals are
+  systematically too narrow (`mean_predictive_sd` 0.9–3.5 ppp100 while the
+  realised spread is larger) — model misspecification (no interaction term,
+  static players vs roster drift), not a bug.
+- Rung 3's `z_mean > 0` on chronological (3.2) and unseen_pair (1.7): it
+  **under-predicts** held-out group value — heavy shrinkage pulls the
+  above-average groups (which survive the split budgets) toward the league mean.
+- Rung 3's 95% coverage on unseen-lineup (0.92) is the one place it clearly
+  beats the rung-2 band (0.75); its 50/80 are worse.
+- **`chronological` has 2 groups and `unseen_pair` has 8** — coverage over 2–8
+  points and a WLS line over 2 points are not meaningful. `make_unseen_pair_split`
+  held only 8 pairs (its `max_test_fraction` budget + `min_test_stints` on 245k
+  stints).
 
-`ChemistryConfig` defaults are unchanged. If real fits need to be faster, a
-later opt-in `ChemistryConfig.large_data()` preset — not done here.
+## Verdict against the contract
+
+`RESEARCH_CONTRACT.md` §11: rung 3 must beat rung 2 "on calibration and
+stability". **Not met on this data.** Rung 3 is better calibrated only at the
+95% level on unseen-lineup; it is worse elsewhere and worse on unseen-pair point
+error. §26 stop condition "split sizes are too small for reliable comparison"
+**applies** — the macro group counts are 2 / 8 / 12.
+
+The rung-3 machinery is a permanent asset (the contract needs it to exist), and
+these numbers are the honest reference. Chemistry-usefulness claims (§17) are
+still measured against rung 3, so the reference is recorded even though rung 3
+did not out-calibrate rung 2 here.
+
+## Next candidate tasks (not started — a genuine fork)
+
+1. **Widen the leakage-safe holdouts** so the macro comparison has enough groups
+   (raise `make_unseen_pair_split` / `make_unseen_lineup_split` budgets;
+   consider rolling-origin chronological folds per §17). Prerequisite for *any*
+   reliable rung-N calibration comparison.
+2. **Rung 4 — explicit teammate-pair interactions.** The single-variance-
+   component ceiling (unseen-pair wants light pooling, the rest heavy) is
+   exactly what a per-pair term addresses.
+3. A structure-aware rung-3 prior (per-pair or per-lineup variance inflation) /
+   split-conformal intervals for the shift holdouts — deferred rung-3 follow-ups.
+
+`ChemistryConfig` defaults unchanged. The 2024-25 playoffs archive is still held
+out for the transport test.
