@@ -201,9 +201,7 @@ def _cross_ctx(
     return out
 
 
-def _cross_rhs(
-    ix: NDArray[np.int64], row_values: FloatArray, dim_i: int
-) -> FloatArray:
+def _cross_rhs(ix: NDArray[np.int64], row_values: FloatArray, dim_i: int) -> FloatArray:
     """``(dim_i,)`` vector: entry i = sum of ``row_values`` over rows containing i."""
 
     k = ix.shape[1]
