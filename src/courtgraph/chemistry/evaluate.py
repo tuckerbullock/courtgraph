@@ -416,11 +416,21 @@ def evaluate_suite(
     if truth is not None:
         model = full_model or ChemistryModel.fit(table, config)
         recovery = _recovery_metrics(model, truth)
+    signal_note = (
+        (
+            "Synthetic demonstration data. "
+            if dataset["synthetic"]
+            else "Real reconstructed stints (no known ground truth). "
+        )
+        + (
+            "Chemistry is a small residual signal; the realized-outcome micro metric "
+            "is dominated by possession noise, so any recoverable signal is visible "
+            "mainly in the macro (group-level) views"
+        )
+        + (" and the truth-referenced view." if dataset["synthetic"] else ".")
+    )
     notes = (
-        "Synthetic demonstration data. Chemistry is a small residual signal; the "
-        "realized-outcome micro metric is dominated by possession noise, so the "
-        "recoverable signal is visible mainly in the truth-referenced and macro "
-        "(group-level) views.",
+        signal_note,
         "Bootstrap intervals are approximate: block resampling of games, point "
         "model additive fit held fixed.",
     )
