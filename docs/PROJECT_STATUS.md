@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-09-01 (pair-level rung-4 evaluation)
+Last updated: 2026-09-01 (playoffs transport test)
 
 ## Current phase
 
@@ -136,9 +136,21 @@ feed), not an independent lineage. No demonstrated betting edge exists.
     absorption, not chemistry. §26's "split sizes too small" concern is now
     resolved; the null survives an adequately powered test. Fourth consecutive
     null for non-additive lineup structure on this data.
-  - Next (roadmap direction #3): more / different data — a playoffs transport
-    test (train RS, test the held-out 2024-25 playoffs), more seasons, or
-    possession-level outcomes. See `docs/CURRENT_TASK.md`.
+  - **Playoffs transport test (roadmap direction #3)** — train rungs 2/3/4 on
+    the 266k RS stints, evaluate on the held-out 2024-25 playoffs (3,325
+    stints, all 210 players seen in the RS, 0 game overlap). **The interaction
+    null holds under phase transport**: pair-level test rung 2 12.98 → rung 4
+    13.22, placebo 13.24; macro over 157 playoff lineups flat (23.9 / 24.0 /
+    24.2); no clutch-specific effect. Fifth consecutive interaction null. But
+    **rung 3's EB intervals transport** — near-nominal playoff coverage
+    (.50 / .85 / .96) where rung 2's bootstrap band badly under-covers
+    (.30 / .53 / .75). `z_mean ≈ 0` for all three (no large systematic phase
+    offset at the lineup-value level). `courtgraph transport`; see
+    `docs/CURRENT_TASK.md`.
+  - Next (roadmap direction #1): write up the "not supported" finding for
+    transferable pair/lineup chemistry as a standing findings document. Then
+    direction #4: role-conditioned interactions, and a new backlog item —
+    quantify a player's effect on improving teammates' *individual* production.
 
 ## Not started
 - Recovering the 840 quarantined regular-season games (503 `network_required`,
@@ -179,7 +191,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 190 unit tests, Ruff, mypy over 53 source
+The current implementation passes 200 unit tests, Ruff, mypy over 55 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
 --ingest-dir`) on the local five-season regular-season archive: 6,000 games
@@ -197,17 +209,21 @@ no-signal control produces no improvement.
 ## Next verifiable outcome
 
 Ladder rungs 0–5 have been fit and evaluated on the 266k real regular-season
-stints against the widened holdouts (`docs/CURRENT_TASK.md`). Rung 3
-(hierarchical EB) is the reference baseline and out-calibrates rung 2 on the
-structural holdouts. **Neither interaction rung beats it**: rung 5 (low-rank)
-and rung 4 (explicit pairs) both fail to improve held-out prediction. The
-rung-4 null now survives a well-powered, placebo-controlled pair-level exit
-test (668 pair groups), so `RESEARCH_CONTRACT.md` §26's "successive models show
-no transferable interaction signal" applies and its "split sizes too small"
-caveat is resolved. Remaining shots (`docs/CURRENT_TASK.md`): a playoffs
-transport test and more / different data (direction #3); a role-conditioned
-interaction parameterization (direction #4). Neural rungs 6–7 stay gated — the
-interaction question has not passed at rungs 0–5.
+stints across **four** leakage-safe evaluation tasks — the three widened
+in-sample holdouts (chronological / unseen-pair / unseen-lineup) and the
+playoffs phase-transport test (`docs/CURRENT_TASK.md`). Rung 3 (hierarchical
+EB) is the reference baseline: it out-calibrates rung 2 on the structural
+holdouts, and its predictive intervals transport to the playoffs at
+near-nominal coverage. **No interaction rung beats it on any task**: rung 5
+(low-rank) and rung 4 (explicit pairs) both fail to improve held-out
+prediction; the rung-4 pair terms are indistinguishable from a placebo on a
+well-powered pair-level test in-sample (668 pair groups) and in the playoffs
+(476 pair groups). `RESEARCH_CONTRACT.md` §26's "successive models show no
+transferable interaction signal" applies; its "split sizes too small" caveat is
+resolved. The next step is **direction #1 — write up the "not supported"
+finding** as a standing findings document, then direction #4 (role-conditioned
+interactions; a new "player lifts teammates" backlog item). Neural rungs 6–7
+stay gated — the interaction question has not passed at rungs 0–5.
 
 ## Governing document
 
