@@ -206,6 +206,24 @@ on every holdout. It is not the contract's primary unit (points per 100), so
 it does not clear §17.1 by itself — but it is direct evidence that a real,
 small, role-dependent non-additivity exists in how lineups shoot.
 
+## Skill redundancy — a coherent in-sample sign, a faint held-out edge
+
+`courtgraph redundancy` (2026-09-01). Instead of a 15-cell role-pair matrix,
+the interaction is D = 6 coefficients `ρ_d` on lineup *concentration* features:
+`conc_d = (Σ zᵢ_d)² − Σ zᵢ_d²` over the offensive players' standardized role
+vectors, positive when they double up on skill `d`. `ρ_d < 0` means
+concentrating `d` hurts.
+
+On the 266k stints **all six `ρ_d` are negative** — every kind of offensive
+skill redundancy is a small penalty, largest for **offensive rebounding
+(−0.20)** and **usage (−0.19)** ("two ball-dominant creators clash"), and
+smallest for **three-point-attempt rate (−0.04, ~0)** — more shooters is close
+to additive. The permuted-role placebo's `ρ` have mixed signs and no pattern.
+Held out, redundancy beats its placebo by 0.1 % / 0.6 % on the two structural
+holdouts and is tied on chronological (with only 6 parameters it does not
+overfit the era, unlike the role-cluster model). Faint, but directionally
+consistent with the other two positives.
+
 ## What this establishes — and what it does not
 
 **Supported:**
@@ -262,6 +280,10 @@ courtgraph mechanistic \
   --snapshot-dir data/nba_snapshots/rs_2020_2024/snap \
   --profiles data/nba_snapshots/rs_2020_2024/player_profiles.jsonl \
   --outcome three_share --clusters 5 --bootstrap 100 --json
+courtgraph redundancy \
+  --input data/nba_snapshots/rs_2020_2024/out/stints.jsonl \
+  --profiles data/nba_snapshots/rs_2020_2024/player_profiles.jsonl \
+  --clusters 5 --bootstrap 100 --json
 ```
 
 Result JSONs are gitignored under `data/nba_snapshots/`. Rung-5 numbers:
