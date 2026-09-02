@@ -12,12 +12,13 @@ Different estimands, not "does γ_ij exist". Order: **D → B → C → E.**
   placebo recovers the *exact same* `τ_λ` per fold. Held-out RMSE within 0.5 %
   of rung 3, matched by the placebo. Written up in `INTERACTION_FINDINGS.md`
   §45.
-- **D — transaction backtest (NEXT)** — cohort derived from our own stint data
-  (~948 moves: 324 mid-season + 624 clean cross-season, meaningful exposure
-  each side). Does a player's lineup-value contribution move with him across a
-  team change, or does part stay behind (roster fit)? Leakage-safe: train
-  excluding the post-move lineups; predict with the transferred `α`; compare to
-  realized; phantom-transaction placebo. Best-powered test in the project.
+- **D — transaction backtest — DONE** (`task/transaction-backtest`, PR pending).
+  585 clean cross-season switches + 1,200 phantom non-movers. **Clean null:**
+  mean |Δ| real − phantom = −0.30 [−0.63, +0.03] — movers' lineups scatter from
+  the additive prediction no more than non-movers', if anything marginally
+  less. A player's lineup-value contribution transfers across a team change as
+  cleanly as a non-mover's stays put. Best-powered test in the project.
+  `INTERACTION_FINDINGS.md` "Transaction backtest".
 - **B → C → E block** — per-player production ingest → §45 Phase B lift model →
   defensive side (`matchups` surface acquired). B is the ~1–2 week keystone.
 

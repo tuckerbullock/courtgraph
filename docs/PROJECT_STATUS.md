@@ -195,8 +195,15 @@ feed), not an independent lineage. No demonstrated betting edge exists.
   - **§45 Phase A — null (2026-09-02, `courtgraph player-lift`).** A pooled
     lift scalar per player on lineup value is indistinguishable from zero and
     from a player-scrambled placebo (identical `τ_λ` per fold; full-fit `τ_λ²`
-    at the grid floor). Next in the "could still flip it" arc: transaction
-    backtest (D), then per-player production ingest → Phase B → defensive side.
+    at the grid floor).
+  - **Transaction backtest — null (2026-09-02, `courtgraph transaction-backtest`).**
+    585 clean cross-season team switches vs 1,200 phantom non-movers. Movers'
+    lineups scatter from the additive prediction no more than non-movers'
+    (mean |Δ| gap −0.30 [−0.63, +0.03]). A player's lineup-value contribution
+    transfers across a team change as cleanly as a non-mover's stays put — the
+    best-powered test in the project, and a clean null.
+  - Remaining "could still flip it" work: per-player production ingest → §45
+    Phase B (direct lift on individual production) → defensive side.
 
 ## Not started
 - Nullable `days_rest` (stint schema v3) for the season-opener `missing_context`
@@ -214,7 +221,8 @@ feed), not an independent lineage. No demonstrated betting edge exists.
   progress this task).
 - The contract's independent-parser gate and multi-game reconciliation gate; minute/lineup-minute reconciliation.
 - Model-ladder rungs 1 and 7; calibrated Bayesian uncertainty.
-- Transaction backtest (T4); the contract's full six-part evidence bar.
+- Mid-season-trade transaction cohort (the cross-season T4 backtest is done —
+  null); the contract's full six-part evidence bar.
 - Real-NBA predictive lineup recommendations, dated complete-roster generation, and the broader product backlog. The local observational/synthetic app is implemented.
 
 ## Current verification
