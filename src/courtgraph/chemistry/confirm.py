@@ -78,6 +78,7 @@ class ConfirmationResult:
     n_boot: int
     holdout_groups: dict[str, int]
     rows: tuple[ConfirmRow, ...]
+    mediation: dict[str, float]
     notes: tuple[str, ...]
 
     def as_dict(self) -> dict[str, Any]:
@@ -86,6 +87,7 @@ class ConfirmationResult:
             "n_boot": self.n_boot,
             "holdout_groups": dict(self.holdout_groups),
             "rows": [r.as_dict() for r in self.rows],
+            "mediation": dict(self.mediation),
             "notes": list(self.notes),
         }
 
@@ -133,10 +135,12 @@ def run_confirmation(
     clustering_by_k: dict[int, RoleClustering],
     attribution: ShotAttribution,
     *,
+    outcomes: tuple[str, ...] = ("three_share",),
     n_lineups: int = 120,
     n_boot: int = 2000,
     boot_seed: int = 0,
     min_fga: int = 3,
+    mediation_k: int = 5,
 ) -> ConfirmationResult:
     from courtgraph.features.role_clusters import permuted_clustering
 
@@ -148,6 +152,7 @@ def run_confirmation(
     splits: dict[str, SplitManifest] = make_all_splits(table, n_lineups=n_lineups)
     holdout_groups: dict[str, int] = {}
     rows: list[ConfirmRow] = []
+    mediation: dict[str, float] = {}
 
     for holdout in _STRUCTURAL:
         manifest = splits[holdout]
@@ -228,36 +233,65 @@ def run_confirmation(
                 )
             )
 
-        # mechanistic three_share on the same holdout
-        _, mech_train = mechanistic_table_and_design(
-            space, train_table, attribution, "three_share", min_fga=min_fga
-        )
-        mech_test_kt, mech_test = mechanistic_table_and_design(
-            space, test_table, attribution, "three_share", min_fga=min_fga
-        )
-        m_groups = _group_index(mech_test_kt, manifest)
-        m_keys = list(m_groups)
-        m_ga = {g: np.asarray(m_groups[g], dtype=np.int64) for g in m_keys}
-        m_y = np.array([_group_realized(mech_test, m_groups)[k] for k in m_keys])
-        m_rung3 = HierarchicalRidge.fit(mech_train, space)
-        m_p3 = _group_points(m_rung3, mech_test, m_ga)
-        for k in k_values:
-            m_role = RoleClusterInteraction.fit(mech_train, space, clustering_by_k[k])
-            m_role_p = RoleClusterInteraction.fit(mech_train, space, placebo_by_k[k])
-            rows.append(
-                _row(
-                    "mechanistic_role",
-                    k,
-                    holdout,
-                    "three_share",
-                    _group_points(m_role, mech_test, m_ga),
-                    m_p3,
-                    _group_points(m_role_p, mech_test, m_ga),
-                    m_y,
-                    n_boot=n_boot,
-                    seed=boot_seed,
-                )
+        # mechanistic outcomes on the same holdout
+        for outcome in outcomes:
+            _, mech_train = mechanistic_table_and_design(
+                space, train_table, attribution, outcome, min_fga=min_fga
             )
+            mech_test_kt, mech_test = mechanistic_table_and_design(
+                space, test_table, attribution, outcome, min_fga=min_fga
+            )
+            m_groups = _group_index(mech_test_kt, manifest)
+            m_keys = list(m_groups)
+            m_ga = {g: np.asarray(m_groups[g], dtype=np.int64) for g in m_keys}
+            m_y = np.array([_group_realized(mech_test, m_groups)[k] for k in m_keys])
+            m_rung3 = HierarchicalRidge.fit(mech_train, space)
+            m_p3 = _group_points(m_rung3, mech_test, m_ga)
+            for k in k_values:
+                m_role = RoleClusterInteraction.fit(
+                    mech_train, space, clustering_by_k[k]
+                )
+                m_role_p = RoleClusterInteraction.fit(
+                    mech_train, space, placebo_by_k[k]
+                )
+                m_role_point = _group_points(m_role, mech_test, m_ga)
+                rows.append(
+                    _row(
+                        "mechanistic_role",
+                        k,
+                        holdout,
+                        outcome,
+                        m_role_point,
+                        m_p3,
+                        _group_points(m_role_p, mech_test, m_ga),
+                        m_y,
+                        n_boot=n_boot,
+                        seed=boot_seed,
+                    )
+                )
+                # mediation: does the role model's incremental three_share
+                # prediction line up with the lineup's scoring surprise?
+                if (
+                    outcome == "three_share"
+                    and holdout == "unseen_lineup"
+                    and k == mediation_k
+                ):
+                    dts = {
+                        m_keys[i]: float(m_role_point[i] - m_p3[i])
+                        for i in range(len(m_keys))
+                    }
+                    dpts = {keys[i]: float(y[i] - p3[i]) for i in range(len(keys))}
+                    common = [g for g in m_keys if g in dpts]
+                    if len(common) >= 5:
+                        a = np.array([dts[g] for g in common])
+                        b = np.array([dpts[g] for g in common])
+                        mediation = {
+                            "n_lineups": float(len(common)),
+                            "corr_d_three_share_vs_d_points": float(
+                                np.corrcoef(a, b)[0, 1]
+                            ),
+                            "mean_abs_d_three_share": float(np.abs(a).mean()),
+                        }
 
     notes = (
         "delta = rmse(baseline) - rmse(model) over the held-out group means; "
@@ -265,11 +299,16 @@ def run_confirmation(
         f"{n_boot} group resamples; frac_gt_0 is P(delta > 0).",
         "unseen_pair stays near 40 groups (exposure budget); unseen_lineup is "
         f"widened to {n_lineups}.",
+        "mediation: correlation over held-out unseen lineups between the role "
+        "model's (three_share prediction - rung 3) and the lineup's (realized "
+        "points/100 - rung 3). ~0 means the shot-mix non-additivity is real "
+        "but does not move scoring.",
     )
     return ConfirmationResult(
         k_values=tuple(k_values),
         n_boot=n_boot,
         holdout_groups=holdout_groups,
         rows=tuple(rows),
+        mediation=mediation,
         notes=notes,
     )

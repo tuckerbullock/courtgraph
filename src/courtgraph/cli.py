@@ -141,6 +141,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     transport.add_argument("--json", action="store_true", help="print result as JSON")
 
+    tmech = subparsers.add_parser(
+        "transport-mechanistic",
+        help="train the role-conditioned model on one file's mechanistic "
+        "outcome (e.g. three_share) and evaluate it on a disjoint second file",
+    )
+    tmech.add_argument("--train", type=Path, required=True, help="training stint file")
+    tmech.add_argument("--test", type=Path, required=True, help="held-out stint file")
+    tmech.add_argument(
+        "--train-snapshot", type=Path, required=True, help="snapshot for the train file"
+    )
+    tmech.add_argument(
+        "--test-snapshot", type=Path, required=True, help="snapshot for the test file"
+    )
+    tmech.add_argument(
+        "--profiles", type=Path, required=True, help="player_profiles.jsonl"
+    )
+    tmech.add_argument(
+        "--outcome",
+        choices=("three_share", "pts_per_shot", "rim_share"),
+        default="three_share",
+    )
+    tmech.add_argument("--clusters", type=int, default=5)
+    tmech.add_argument("--min-fga", type=int, default=3)
+    tmech.add_argument("--boot", type=int, default=2000)
+    tmech.add_argument("--seed", type=int, default=0)
+    tmech.add_argument("--json", action="store_true", help="print result as JSON")
+
     roles = subparsers.add_parser(
         "roles",
         help="compare a role-conditioned interaction model (interaction keyed "
@@ -191,7 +218,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--k", default="3,5,7", help="comma-separated role-cluster counts to sweep"
     )
     confirm.add_argument(
+        "--outcomes",
+        default="three_share",
+        help="comma-separated mechanistic outcomes "
+        "(three_share, pts_per_shot, rim_share)",
+    )
+    confirm.add_argument(
         "--lineups", type=int, default=120, help="unseen-lineup holdout groups"
+    )
+    confirm.add_argument(
+        "--min-fga", type=int, default=3, help="drop stints below this many FGA"
     )
     confirm.add_argument(
         "--boot", type=int, default=2000, help="bootstrap resamples for the CI"
@@ -706,6 +742,61 @@ def _cmd_transport(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_transport_mechanistic(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.mechanistic import transport_mechanistic
+    from courtgraph.chemistry.stints import read_stints
+    from courtgraph.features.player_season import read_player_profiles
+    from courtgraph.features.role_clusters import fit_role_clusters
+    from courtgraph.features.stint_shots import attribute_shots
+    from courtgraph.ingest.snapshot import SnapshotError, load_snapshot
+
+    if args.boot < 100 or args.clusters < 2 or args.min_fga < 1:
+        print("transport-mechanistic: bad --boot / --clusters / --min-fga", file=stream)
+        return 2
+    try:
+        train = read_stints(args.train)
+        test = read_stints(args.test)
+        train_attr = attribute_shots(load_snapshot(args.train_snapshot), train)
+        test_attr = attribute_shots(load_snapshot(args.test_snapshot), test)
+        clustering = fit_role_clusters(
+            read_player_profiles(args.profiles), n_clusters=args.clusters, seed=0
+        )
+    except (SnapshotError, ValueError, FileNotFoundError, OSError) as exc:
+        print(f"transport-mechanistic: {exc}", file=stream)
+        return 2
+
+    result = transport_mechanistic(
+        train,
+        test,
+        train_attr,
+        test_attr,
+        clustering,
+        outcome=args.outcome,
+        min_fga=args.min_fga,
+        n_boot=args.boot,
+        seed=args.seed,
+    )
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True), file=stream)
+        return 0
+    d3 = result["delta_role_vs_rung3"]
+    dp = result["delta_role_vs_placebo"]
+    print(
+        f"transport-mechanistic [{result['outcome']}]: {result['n_test_lineups']} "
+        f"test lineups | rung3 {result['rung3_macro_rmse']:.4f}  role "
+        f"{result['role_macro_rmse']:.4f}  placebo "
+        f"{result['role_placebo_macro_rmse']:.4f}",
+        file=stream,
+    )
+    print(
+        f"  role vs rung3: {d3['mean']:+.4f} [{d3['ci_lo']:+.4f}, {d3['ci_hi']:+.4f}] "
+        f"P={d3['frac_gt_0']:.2f}  | vs placebo: {dp['mean']:+.4f} "
+        f"[{dp['ci_lo']:+.4f}, {dp['ci_hi']:+.4f}] P={dp['frac_gt_0']:.2f}",
+        file=stream,
+    )
+    return 0
+
+
 def _cmd_confirm(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.chemistry.pipeline import run_confirmation_file
 
@@ -714,6 +805,7 @@ def _cmd_confirm(args: argparse.Namespace, stream: TextIO) -> int:
     except ValueError:
         print("confirm: --k must be comma-separated integers", file=stream)
         return 2
+    outcomes = tuple(x.strip() for x in str(args.outcomes).split(",") if x.strip())
     if any(k < 2 for k in k_values) or args.boot < 100 or args.lineups < 10:
         print("confirm: bad --k / --boot / --lineups", file=stream)
         return 2
@@ -723,8 +815,10 @@ def _cmd_confirm(args: argparse.Namespace, stream: TextIO) -> int:
             args.profiles,
             args.snapshot_dir,
             k_values=k_values,
+            outcomes=outcomes,
             n_lineups=args.lineups,
             n_boot=args.boot,
+            min_fga=args.min_fga,
         )
     except (ValueError, FileNotFoundError, OSError) as exc:
         print(f"confirm: {exc}", file=stream)
@@ -742,7 +836,7 @@ def _cmd_confirm(args: argparse.Namespace, stream: TextIO) -> int:
     )
     print(
         f"  {'model':<16} {'K':>2} {'holdout':<14} {'outcome':<14} "
-        f"{'delta vs r3 (95% CI)':<26} {'P>0':>5}",
+        f"{'delta vs r3 (95% CI)':<28} {'vs plc P>0':>10}",
         file=stream,
     )
     for r in result.rows:
@@ -750,7 +844,15 @@ def _cmd_confirm(args: argparse.Namespace, stream: TextIO) -> int:
         print(
             f"  {r.model:<16} {r.k:>2} {r.holdout:<14} {r.outcome:<14} "
             f"{d['mean']:+.4f} [{d['ci_lo']:+.4f}, {d['ci_hi']:+.4f}]"
-            f"   {d['frac_gt_0']:.2f}",
+            f"   {r.delta_vs_placebo['frac_gt_0']:>10.2f}",
+            file=stream,
+        )
+    if result.mediation:
+        m = result.mediation
+        print(
+            f"  mediation ({int(m['n_lineups'])} lineups): corr(role's "
+            f"extra three_share, lineup's points surprise) = "
+            f"{m['corr_d_three_share_vs_d_points']:+.3f}",
             file=stream,
         )
     return 0
@@ -1105,6 +1207,7 @@ _COMMANDS = {
     "transport": _cmd_transport,
     "roles": _cmd_roles,
     "confirm": _cmd_confirm,
+    "transport-mechanistic": _cmd_transport_mechanistic,
     "redundancy": _cmd_redundancy,
     "mechanistic": _cmd_mechanistic,
     "player-features": _cmd_player_features,

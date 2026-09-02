@@ -346,8 +346,10 @@ def run_confirmation_file(
     snapshot_dir: str | Path,
     *,
     k_values: tuple[int, ...] = (3, 5, 7),
+    outcomes: tuple[str, ...] = ("three_share",),
     n_lineups: int = 120,
     n_boot: int = 2000,
+    min_fga: int = 3,
 ) -> ConfirmationResult:
     """Re-run the three interaction positives with a wider ``unseen_lineup``
     holdout, a K sweep, and bootstrap CIs on the (baseline - model) delta.
@@ -371,8 +373,10 @@ def run_confirmation_file(
         table,
         clustering_by_k,
         attribution,
+        outcomes=outcomes,
         n_lineups=n_lineups,
         n_boot=n_boot,
+        min_fga=min_fga,
     )
 
 
