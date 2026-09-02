@@ -38,21 +38,55 @@ get as much new data as you can", "proceed, keep it local & research-scoped",
 
 230 tests pass; ruff / mypy / dep-free clean. 2 commits on the branch.
 
-### In progress
+### Re-ingest result (2026-09-02)
 
-Sequential re-ingest (memory-bounded — the combined 9-season build OOM'd):
-`rs_2016_2019/` then `rs_2020_2024_v2/` (v2 rebuild). Then concatenate RS
-stints and re-run `baselines` / `roles` / `confirm` at the new scale.
+Built memory-bounded, one season-range at a time (a combined 9-season + PO
+build OOM'd this machine):
 
-### Next action
+| RS window | games in | accepted | quar (rate) | stints | `data_nba` recovery |
+|---|---|---|---|---|---|
+| 2016-17 … 2019-20 | 4,746 | 4,556 | 190 (4.0 %) | 239,570 | 903 games |
+| 2020-21 … 2024-25 | 5,998 | 5,760 | 238 (4.0 %) | 297,404 | 620 games |
+| **8-season concat** (`rs_2016_2024/out/stints.jsonl`) | | 10,316 | 428 | **536,974** | 1,523 |
 
-1. Finish the re-ingest; record games/stints/quarantine-rate before-vs-after
-   and the `stats_nba`-vs-`data_nba` possession-count delta in this file.
-2. Regenerate `player_profiles.jsonl`; re-run `courtgraph baselines --rung4`,
-   `roles`, `confirm` on the enlarged RS stint set; update
-   `docs/INTERACTION_FINDINGS.md` and `docs/PROJECT_STATUS.md`. Preserve every
-   result (contract §17).
-3. Open the PR.
+Was 266,518 (2020-24 v1). **All 266,518 prior stints are a strict subset of
+the new 297,404** for that window — the `data_nba` fallback is purely additive.
+Residual quarantines: `score_reconciliation_failed` 162 (fail-closed on
+data.nba.com score ≠ official), `missing_context` 143 (openers → Task 3),
+`network_required` 92 (both surfaces need network), `possession_alternation` 29.
+
+### Model re-run at scale (2026-09-02)
+
+`baselines` (rung 2/3) on the 537k 8-season set and on 2020-24 v2 (297k):
+
+| holdout | 8-season r2 | r3 | 2020-24 v2 r2 | r3 |
+|---|---|---|---|---|
+| chronological | 6.63 | **6.47** | 2.79 | **2.69** |
+| unseen_pair | 19.78 | **18.90** | 19.48 | **19.28** |
+| unseen_lineup | **4.53** | 4.60 | **4.94** | 4.99 |
+
+rung 3 still wins on the pair/chronological holdouts; unseen_lineup is a wash
+(both scales). rung-3 structural-holdout calibration holds (z_sd ≈ 1.0–1.4).
+chronological calibration is still broken and slightly worse over the longer
+2016 → 2024 span (z_sd 2.48). Variance components essentially unchanged
+(τ_off ≈ 2.2, σ ≈ 118) — **the noise floor is structural, not sample-limited**.
+rung 4 skipped at this scale (EM over ~8k pairs OOM-risk; it was already a
+placebo-matched null in PR #16).
+
+`confirm` (`three_share`, K {3,5,7}, 120-group holdout, 3000-boot) on 2020-24
+v2 (297k): `three_share` **holds** — beats rung 3 across all K (CI excludes 0,
+~2 % of RMSE), beats the placebo clearly at K = 3, borderline K = 5/7,
+mediation with scoring = −0.01. The **points/100 role effect is now null** —
+K = 5 delta +0.06 [−0.02, +0.15], CI spans 0 (was barely excluding it on
+266k). redundancy still null. **More data sharpened the negative.**
+
+Full write-up in `docs/INTERACTION_FINDINGS.md` → "At 2× the data".
+
+### Status: complete
+
+6 commits + docs on `task/data-acquisition`. PR: opened. Deferred to the user
+(needs a network where stats.nba.com resolves): `courtgraph fetch-live` for
+2025-26 and the ~92 residual `network_required` games.
 
 ## The work queue (after this task, in order)
 

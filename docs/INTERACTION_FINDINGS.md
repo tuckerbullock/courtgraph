@@ -16,13 +16,15 @@ outcome (§7, §26).
 
 ## Verdict
 
-**On 266,518 real regular-season stints (2020-21 … 2024-25) and the held-out
+**On real regular-season stints (originally 266,518 for 2020-21 … 2024-25;
+re-confirmed 2026-09-02 on 536,974 for 2016-17 … 2024-25) and the held-out
 2024-25 playoffs, transferable teammate-pair / lineup chemistry — as measured
 by the identity-keyed model forms on the ladder through rung 5 — is NOT
 SUPPORTED.** Rungs 4 (explicit per-pair) and 5 (low-rank) do not improve
 held-out prediction over hierarchical additive talent on any of four
 leakage-safe evaluation tasks, and the explicit per-pair terms are
 statistically indistinguishable from a placebo with the same parameter count.
+Doubling the dataset did not change this (see "At 2× the data" below).
 
 **One small positive survives a properly-powered test: shot selection.**
 Three later parameterisations (role-conditioned interaction, mechanistic
@@ -40,10 +42,10 @@ widened to 120 groups, a K sweep, and a 3,000-resample bootstrap CI on the
   only 2 of 6 K values, it does **not** transport to the held-out playoffs
   (Δ ≈ 0, P(Δ>0) = 0.53), and its shot-mix shift is uncorrelated with scoring
   (mediation r = 0.03). A small in-distribution regularity, not a value effect.
-- **role on points/100** — marginal: the CI *just* excludes 0 at K = 5 (the
-  pre-registered config) but K = 3 and K = 7 show nothing. K-fragile, not
-  robustly established.
-- **redundancy** — the held-out edge does not survive (CI [−0.05, +0.05]). The
+- **role on points/100** — was marginal (CI *just* excluded 0 at K = 5 on
+  266k); on the doubled 297k dataset the CI now spans 0 at every K. Not
+  established.
+- **redundancy** — the held-out edge does not survive (CI [−0.05, +0.06]). The
   in-sample "all six concentration coefficients negative" stays a descriptive
   observation.
 
@@ -300,6 +302,38 @@ not transport to a new competitive context (the playoffs). It is the strongest
 non-additivity the ladder has found and it is still well short of
 `RESEARCH_CONTRACT.md` §17.1.
 
+### At 2× the data (2026-09-02)
+
+`task/data-acquisition` doubled the regular-season set: a second
+(`data.nba.com`) reconstruction surface recovered 1,523 previously-quarantined
+games, and 2016-17 → 2019-20 was ingested. **RS 266,518 → 536,974 stints**;
+the 2020-21 → 2024-25 window alone went 266,518 → 297,404 (every prior stint a
+strict subset).
+
+Re-running `baselines` and `confirm` on the enlarged data **sharpens the
+negative**:
+
+- **rung 3 vs rung 2** — unchanged conclusion at both 297k and 537k: rung 3
+  wins on `chronological` (6.47 vs 6.63) and `unseen_pair` (18.90 vs 19.78);
+  `unseen_lineup` is a wash. Variance components move < 5 % (τ_off ≈ 2.2,
+  σ ≈ 118) — **the noise floor is structural, not sample-size-limited**, so
+  more seasons will not on their own resolve a sub-0.5 pts/100 pair effect.
+  `chronological` calibration is still broken and slightly *worse* over the
+  longer 2016 → 2024 span (z_sd 2.48).
+- **role on points/100** — the K = 5 marginal edge from the first confirmation
+  is **gone**: on 297k the 120-group `unseen_lineup` delta is +0.06
+  [−0.02, +0.15], CI now spans 0 (was barely excluding it). No interaction
+  form improves lineup *scoring* at a level that survives proper power.
+- **`three_share`** — **holds**, essentially unchanged: beats rung 3 across
+  K {3, 5, 7} (95 % CI excludes 0, ~2 % of RMSE), beats the placebo clearly at
+  K = 3 and borderline at K = 5/7, mediation with scoring = **−0.01**. More
+  data neither strengthened nor killed it — a robust, tiny, value-neutral
+  shot-distribution regularity.
+- **redundancy** — still null (CI [−0.05, +0.06]).
+
+So the doubled dataset confirms the hardened verdict and removes the last
+marginal points/100 signal. `RESEARCH_CONTRACT.md` §17.1 remains **not met**.
+
 ## What this establishes — and what it does not
 
 **Supported:**
@@ -342,9 +376,13 @@ non-additivity the ladder has found and it is still well short of
 A direct per-player "lifts teammates' individual production" estimate (needs
 per-player on-court production, a data extension); a transaction backtest
 (roster changes as natural experiments — the contract's T4); possession-level
-outcomes; substantially more seasons (the confirmed `three_share` effect is
-real but ~3 % of a small RMSE — points/100 would need many more seasons to
-resolve a comparable effect).
+outcomes; the defensive side (`matchups` surface, now acquired).
+
+**Not** more seasons alone: the 2026-09-02 doubling to 537k stints left the
+variance components < 5 % changed and removed rather than sharpened the
+marginal points/100 signal — the per-parameter noise floor for pair effects is
+structural at this scale, so resolving a sub-0.5 pts/100 effect needs a
+different estimand, not more of the same rows.
 
 ## Reproduce
 
