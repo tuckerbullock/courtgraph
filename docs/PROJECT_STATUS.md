@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-09-01 (redundancy / anti-synergy — all six coefficients negative)
+Last updated: 2026-09-01 (confirmation — one small positive survives, in shot selection)
 
 ## Current phase
 
@@ -205,7 +205,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 220 unit tests, Ruff, mypy over 70 source
+The current implementation passes 223 unit tests, Ruff, mypy over 72 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
 --ingest-dir`) on the local five-season regular-season archive: 6,000 games
@@ -235,22 +235,21 @@ well-powered pair-level test in-sample (668 pair groups) and in the playoffs
 (476 pair groups). The null is written up in
 [`docs/INTERACTION_FINDINGS.md`](INTERACTION_FINDINGS.md).
 
-**Role-conditioning is a small positive.** `courtgraph roles` beats rung 3
-**and** a permuted-role placebo by ~1 % on the two structural holdouts on
-points/100; `courtgraph mechanistic` shows the same signal more clearly on
-shot-based outcomes — **role beats the placebo by 2–5 % on three-point-attempt
-share on all three holdouts** (including chronological), and by ~2 % on shot
-quality on the structural holdouts. The fitted role-pair matrix reads like the
-spacing mechanism (two shooters → more threes than additive; a rim big →
-fewer). And `courtgraph redundancy` finds **all six per-role concentration
-coefficients `ρ_d` negative** — every kind of offensive skill redundancy is a
-small penalty (largest: offensive rebounding −0.20, usage −0.19; smallest:
-three-point rate −0.04), with a ~0.5 % placebo-surviving held-out edge and no
-drift penalty. Three consistent, directionally-coherent positives; all small
-(13–60 group means, no CI), none the contract's primary unit, so §17.1 is not
-cleared. The next verifiable outcome is a **better-powered confirmation**
-(wider holdouts, bootstrap the model−rung-3 delta, K sweep) or candidate idea
-#5 (transaction backtest). Neural rungs 6–7 stay gated.
+**One small non-additivity survives a properly-powered test — in shot
+selection, not scoring.** Three later parameterisations (`courtgraph roles`,
+`mechanistic`, `redundancy`) each showed a ~1–5 % edge on 40–60 group means. A
+better-powered re-run (`courtgraph confirm` — `unseen_lineup` widened to 120
+groups, a K sweep {3,5,7}, a 3,000-resample bootstrap CI on the
+`RMSE(baseline) − RMSE(model)` delta) keeps **one**: role-conditioning
+predicts a lineup's **three-point-attempt share** ~3 % better than rung 3,
+95 % CI excluding 0 against **both** baseline and placebo, at K = 5 and K = 7,
+stable across K. The **points/100** role effect is marginal (CI just excludes
+0 at K = 5 only, K-fragile); **redundancy** does not survive (CI [−0.05,
++0.05]). `RESEARCH_CONTRACT.md` §17.1 (a significant primary-unit improvement)
+remains **not met** — where lineups differ from the sum of their parts it is
+in how they shoot, not how much they score. Remaining: candidate idea #5
+(transaction backtest — needs a roster-change dataset), §45 player-lift, or the
+cycle-1 research report. Neural rungs 6–7 stay gated.
 
 ## Governing document
 
