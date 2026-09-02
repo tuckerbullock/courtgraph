@@ -365,6 +365,32 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="also print a summary as JSON"
     )
 
+    player_production = subparsers.add_parser(
+        "player-production",
+        help="attribute per-(player, stint) offensive production (made-FG "
+        "points, free throws, assist credit) from the snapshot -- the input to "
+        "§45 Phase B",
+    )
+    player_production.add_argument(
+        "--snapshot-dir", type=Path, required=True, help="snapshot directory"
+    )
+    player_production.add_argument(
+        "--stints", type=Path, required=True, help="stint file"
+    )
+    player_production.add_argument(
+        "--out", type=Path, required=True, help="write player_production.jsonl here"
+    )
+    player_production.add_argument(
+        "--assist-credit",
+        type=float,
+        default=0.5,
+        help="fraction of assisted-teammate points credited to the passer "
+        "(registered research choice; default 0.5)",
+    )
+    player_production.add_argument(
+        "--json", action="store_true", help="also print a summary as JSON"
+    )
+
     ingest = subparsers.add_parser(
         "ingest",
         help="convert an offline NBA snapshot into validated stint records",
@@ -1219,6 +1245,40 @@ def _cmd_player_features(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_player_production(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.stints import read_stints
+    from courtgraph.features.player_production import (
+        ProductionConfig,
+        attribute_player_production,
+        write_production,
+    )
+    from courtgraph.ingest.snapshot import SnapshotError, load_snapshot
+
+    try:
+        snapshot = load_snapshot(args.snapshot_dir)
+        table = read_stints(args.stints)
+    except (SnapshotError, FileNotFoundError, OSError, ValueError) as exc:
+        print(f"player-production: {exc}", file=stream)
+        return 2
+
+    prod = attribute_player_production(
+        snapshot, table, config=ProductionConfig(assist_credit=args.assist_credit)
+    )
+    write_production(prod, args.out)
+    summary = prod.summary()
+    if args.json:
+        print(json.dumps({**summary, "out": str(args.out)}, indent=2), file=stream)
+    else:
+        print(
+            f"player-production: {summary['n_rows']} (player, stint) rows, "
+            f"event match rate {summary['match_rate']:.1%} "
+            f"({summary['off_roster_events_dropped']} off-roster events dropped) "
+            f"-> {args.out}",
+            file=stream,
+        )
+    return 0
+
+
 def _cmd_ingest(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.ingest.pipeline import run_ingest
     from courtgraph.ingest.policy import IngestPolicy
@@ -1443,6 +1503,7 @@ _COMMANDS = {
     "transaction-backtest": _cmd_transaction_backtest,
     "mechanistic": _cmd_mechanistic,
     "player-features": _cmd_player_features,
+    "player-production": _cmd_player_production,
     "predict": _cmd_predict,
 }
 
