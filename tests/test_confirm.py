@@ -37,14 +37,16 @@ def _shot_attribution(
         )
         fga = 15
         base = 5 + 0.4 * surplus + float(rng.normal(0, 0.6))
-        fg3a = int(min(max(round(base), 0), fga))
+        fg3a = int(min(max(round(base), 0), fga - 2))
+        rim_raw = round(4 - 0.2 * surplus + rng.normal(0, 0.5))
+        rim = int(min(max(rim_raw, 0), fga - fg3a))
         per_stint[stint.stint_id] = StintShots(
             fga=fga,
             fgm=7,
             fg3a=fg3a,
             fg3m=fg3a // 3,
-            rim_fga=4,
-            mid_fga=fga - fg3a - 4,
+            rim_fga=rim,
+            mid_fga=max(fga - fg3a - rim, 0),
             corner3_fga=1,
             fg_points=15,
         )
@@ -105,6 +107,39 @@ class ConfirmationRunTests(unittest.TestCase):
             self.assertIn("mean", r.delta_vs_rung3)
             self.assertIn("ci_lo", r.delta_vs_placebo)
         self.assertEqual(set(result.holdout_groups), {"unseen_pair", "unseen_lineup"})
+        # mediation is computed on the unseen_lineup holdout at k=5
+        if result.mediation:
+            self.assertIn("corr_d_three_share_vs_d_points", result.mediation)
+
+    def test_multiple_outcomes_and_transport(self) -> None:
+        from courtgraph.chemistry.confirm import run_confirmation
+        from courtgraph.chemistry.mechanistic import transport_mechanistic
+
+        table, clustering, delta = _role_dataset(n_stints=6000, tau_role=2.0, seed=11)
+        att = _shot_attribution(table, clustering, delta)
+        result = run_confirmation(
+            table,
+            {5: clustering},
+            att,
+            outcomes=("three_share", "rim_share"),
+            n_lineups=30,
+            n_boot=300,
+        )
+        outcomes = {r.outcome for r in result.rows if r.model == "mechanistic_role"}
+        self.assertEqual(outcomes, {"three_share", "rim_share"})
+
+        # transport: train + test on disjoint halves by game id
+        games = sorted({s.game_id for s in table})
+        cut = set(games[: len(games) // 2])
+        from courtgraph.chemistry.stints import StintTable
+
+        tr = StintTable.from_stints([s for s in table if s.game_id in cut])
+        te = StintTable.from_stints([s for s in table if s.game_id not in cut])
+        out = transport_mechanistic(
+            tr, te, att, att, clustering, outcome="three_share", n_boot=300
+        )
+        self.assertIn("delta_role_vs_rung3", out)
+        self.assertGreater(out["n_test_lineups"], 0)
 
 
 if __name__ == "__main__":

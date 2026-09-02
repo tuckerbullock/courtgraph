@@ -2,107 +2,83 @@
 
 Last updated: 2026-09-01
 
-## State
+## Active
 
-Done — **better-powered confirmation of the three interaction positives, run
-on the 266k real regular-season stints.** Branch `task/confirmation-power` off
-`main`. Committed; PR open.
+**Task 1 of an autonomous work queue (user: "do all of those things ... just
+keep going"): harden the one confirmed interaction result, `three_share`.**
+Branch `task/harden-three-share`. PR #24. **Code + docs complete; result in.**
 
-**Result: one of the three survives. Role-conditioning significantly improves
-prediction of a lineup's three-point-attempt share (`three_share`) — vs the
-rung-3 baseline AND vs the permuted-role placebo, robust across K = 5 and
-K = 7, on the widened 120-group unseen-lineup holdout. The aggregate
-points/100 role effect is marginal and K = 5-dependent; the redundancy effect
-does not survive.** All results preserved.
+### Result (2026-09-01)
 
-## What was built (`~confirmation-power`)
+Hardening **downgrades `three_share`**. It is a small, real, *in-distribution*
+regularity in how role-redundant lineups distribute shot attempts — not a
+value effect, and it does not generalise to a new context.
 
-- **`make_all_splits`** threads `n_lineups` — the `unseen_lineup` holdout
-  widens 60 → 120 groups. (`unseen_pair` stays at 40: the 15 %-of-stints
-  exposure budget caps it; the bootstrap CI carries that uncertainty.)
-- **`bootstrap_group_delta`** (`baseline_ladder.py`) — resamples the held-out
-  group means with replacement (3,000×) and reports mean / 95 % CI /
-  P(delta > 0) for `RMSE(baseline) − RMSE(model)`. CI excluding 0 = the
-  improvement is not group-sampling noise.
-- **`courtgraph confirm --input <stints> --profiles <profiles> --snapshot-dir
-  <snap> [--k 3,5,7] [--lineups 120] [--boot N]`** — re-runs role, redundancy
-  and mechanistic `three_share` on both structural holdouts across a K sweep,
-  each with a CI vs rung 3 and vs the permuted-role placebo.
-- 223 tests; ruff / mypy / dep-free clean.
+- **a. Playoffs transport: NULL.** RS-trained role model, tested on the
+  held-out 2024-25 playoffs (65 recurring lineups): Δ RMSE vs rung 3 =
+  +0.00005 [−0.0011, +0.0012], P(Δ>0) = 0.53. `pts_per_shot` transport also
+  null.
+- **b. Mediation ≈ 0.** Over the 120 held-out unseen lineups, corr( role's
+  incremental `three_share` prediction , lineup scoring surprise vs rung 3 )
+  = **0.03**. Mean |Δ three_share| ≈ 0.3 pp. The shot-mix shift does not move
+  points.
+- **c. Other shot outcomes: null.** `pts_per_shot` and `rim_share` clear
+  neither baseline nor placebo on any holdout / K (`rim_share` role model is
+  slightly *worse* than additive).
+- **d. Wider K sweep (3–10).** vs **rung 3**: `three_share` role model beats
+  additive at K = 3,4,5,6,8 (CI excludes 0), marginal at K = 10 — robust. vs
+  **placebo**: CI excludes 0 at **K = 5 and K = 8 only** (K 3,4,6,10 span 0,
+  P 0.83–0.94). K-fragile against the placebo.
 
-## Result — 266k RS stints, K sweep {3, 5, 7}, 3,000 bootstrap resamples
+Verdict: strongest non-additivity the ladder has found, still well short of
+`RESEARCH_CONTRACT.md` §17.1. Documented in `docs/INTERACTION_FINDINGS.md`
+("Confirmation → Hardening"). Result JSONs gitignored under
+`data/nba_snapshots/rs_2020_2024/` (`chem_confirm_hardened.json`,
+`chem_tmech_three_share.json`, `chem_tmech_pts_per_shot.json`).
 
-`courtgraph confirm … --k 3,5,7 --lineups 120 --boot 3000`. Result:
-`data/nba_snapshots/rs_2020_2024/chem_confirm_eval.json` (gitignored). Holdout
-groups: unseen_lineup **120**, unseen_pair **40**.
+### Next action for task 1
 
-### `three_share` — the confirmed positive
+Merge PR #24 (CI green, MERGEABLE). Then start task 2.
 
-`RMSE(rung 3) − RMSE(role)` and `RMSE(placebo) − RMSE(role)` on the 120-group
-unseen-lineup holdout (positive = role better):
+## The work queue (after this task, in order)
 
-| K | role RMSE | vs rung 3 (95 % CI) | vs placebo (95 % CI) |
-|---|---|---|---|
-| 3 | 0.0325 | +0.0006 [+0.0001, +0.0012] ✓ | +0.0003 [−0.0003, +0.0008] |
-| **5** | **0.0321** | **+0.0010 [+0.0004, +0.0016] ✓** | **+0.0008 [+0.0002, +0.0014] ✓** |
-| **7** | **0.0321** | **+0.0010 [+0.0003, +0.0017] ✓** | **+0.0011 [+0.0003, +0.0018] ✓** |
+2. **Recover the 840 quarantined RS games** (503 `network_required`, 170
+   pbpstats back-to-back, 93 score-reconciliation). ~15 % more data; the
+   confirmation showed the models are power-limited.
+3. **Nullable `days_rest` schema v3** — the 68 season-opener quarantines.
+4. **Per-player production ingest** — a pass emitting per-player on-court
+   offensive production from the play-by-play. Unlocks 5, 7, and the
+   defensive side.
+5. **§45 player-lift** — Phase A (pooled lift scalar on lineup value), then
+   Phase B (per-player production model + transaction-cohort test).
+6. **Defensive-side extension** — roles / redundancy / mechanistic on the
+   defensive lineup (all current work is offense-only).
+7. **Turnover-rate / assist-rate mechanistic outcomes** — with the full
+   `confirm` treatment.
+8. **Candidate #5 — transaction backtest (T4)** — real trades/injuries as
+   natural experiments. Needs a roster-change dataset (acquisition).
+9. **Model-ladder gaps** — rung 1 (EB-shrunk lineup mean) explicit; rung 5
+   low-rank re-run under the bootstrap-CI regime.
+10. **Contract deliverables** — the "strong" unseen-pair holdout (first-ever
+    partnership in the test window); seed-stability across more seeds; the
+    cycle-1 research report; the decision log.
+11. **More seasons** — 2016-17 → 2019-20 (data-quality gated); 2025-26 when
+    published.
+12. **Product (§44 / issue #8)** — lineup finder, roster optimizer, real-data
+    model serving in the app, the seven §44 appendix capabilities.
 
-At K = 5 and K = 7 the improvement is significant against **both** the rung-3
-baseline and the permuted-role placebo, and stable across the K sweep. Rung-3
-RMSE on this outcome is ~0.033, so the effect is ~3 % of that — real but small.
-On the 40-group unseen_pair holdout nothing reaches significance (P 0.6–0.9,
-CI touches 0) — that holdout is too small.
-
-### Role model on points/100 — marginal, K-fragile
-
-| K | role RMSE | rung 3 RMSE | vs rung 3 (95 % CI) | P>0 |
-|---|---|---|---|---|
-| 3 | 6.062 | 6.061 | −0.002 [−0.071, +0.070] | 0.48 |
-| **5** | **5.959** | 6.061 | **+0.101 [+0.00001, +0.203]** | 0.98 |
-| 7 | 6.040 | 6.061 | +0.019 [−0.103, +0.140] | 0.62 |
-
-At K = 5 (the pre-registered config from PR #20) the CI *just* excludes 0 and
-P(delta > 0) ≈ 0.98 against both baseline and placebo — but K = 3 and K = 7
-show nothing. The ~1–2 % points/100 role edge is **K = 5-dependent and not
-robustly established**.
-
-### Redundancy — not confirmed
-
-`RMSE(rung 3) − RMSE(redundancy)` = +0.002, 95 % CI [−0.054, +0.051],
-P = 0.55 on the 120-group holdout, unchanged across K (the model uses
-continuous role vectors, which do not depend on K). The 0.5 % edge from PR #22
-was group-sampling noise. The in-sample "all six ρ_d negative" remains a
-descriptive observation, not a held-out predictive gain.
-
-## Revised verdict
-
-**On 266k real regular-season stints, the only non-additive lineup signal that
-survives a properly-powered, bootstrap-CI, K-robust test is a small effect on
-*shot selection*: role-conditioning predicts a lineup's three-point-attempt
-share ~3 % better than additive talent, significant against baseline and
-placebo. Lineup value in *points per 100* is not improved by any interaction
-parameterisation at a level that survives proper power — the aggregate-scoring
-non-additivity, if it exists, is below what 40–120 held-out group means can
-resolve.**
-
-Where lineups differ from the sum of their parts, it is in *how they shoot*,
-not *how much they score*. `RESEARCH_CONTRACT.md` §17.1 (a significant macro
-unseen-lineup improvement in the primary unit) remains **not met**.
-
-## Candidate follow-up ideas — final status
-
-1. Role/skill-conditioned interaction — done; points/100 effect **marginal,
-   K-fragile** on proper power.
-2. Mechanistic outcomes — done; **`three_share` confirmed** (significant, robust).
-3. Skill redundancy — done; **not confirmed** on proper power.
-4. Playoffs transport — done (null).
-5. **Transaction backtest (T4) — NOT STARTED.** Needs a roster-change dataset.
-
-Master-plan §45 player-lift also remains.
+Each item lands as its own focused branch + PR. Preserve every result
+whatever it is (contract §17). `ChemistryConfig` / `HierarchicalConfig` /
+`RoleInteractionConfig` / `RedundancyConfig` defaults unchanged unless a task
+explicitly changes them.
 
 ## Next action
 
-Merge this branch. Then the user's call between candidate idea #5 (transaction
-backtest — needs data acquisition), §45 player-lift, or writing the cycle-1
-research report now that the interaction question has a defensible answer
-(mostly null; one small shot-selection positive).
+Merge PR #24, then begin task 2 (recover the ~840 quarantined RS games) on a
+fresh branch. Quarantine scoping already done: `quarantine.jsonl` holds 79,135
+rows but 78,007 are per-possession `split_lineup_possession`; the per-game
+reasons are 503 `network_required`, 207 `unknown_team`, 171
+`pbpstats_reconstruction_failed`, 93 `score_reconciliation_failed`, 81
+`possession_alternation_failed`, 68 `missing_context`, 5 `ambiguous_scoring`.
+Confirm the per-game total against `manifest.json` (not `quarantine.jsonl`)
+first.

@@ -22,6 +22,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from courtgraph.chemistry.baseline import AdditiveRidge
 from courtgraph.chemistry.baseline_ladder import _group_realized, _rung2_band
@@ -38,6 +39,7 @@ from courtgraph.chemistry.stints import StintTable
 from courtgraph.features.role_clusters import RoleClustering, permuted_clustering
 from courtgraph.features.stint_shots import ShotAttribution, StintShots
 
+FloatArray = NDArray[np.float64]
 _HOLDOUTS = ("chronological", "unseen_pair", "unseen_lineup")
 OUTCOMES = ("pts_per_shot", "rim_share", "three_share")
 _ZERO = StintShots(0, 0, 0, 0, 0, 0, 0, 0)
@@ -244,3 +246,68 @@ def evaluate_mechanistic(
         holdouts=tuple(holdouts),
         notes=notes,
     )
+
+
+def transport_mechanistic(
+    train_table: StintTable,
+    test_table: StintTable,
+    train_attribution: ShotAttribution,
+    test_attribution: ShotAttribution,
+    clustering: RoleClustering,
+    *,
+    outcome: str = "three_share",
+    min_fga: int = 3,
+    n_boot: int = 2000,
+    seed: int = 0,
+    config: HierarchicalConfig | None = None,
+    role_config: RoleInteractionConfig | None = None,
+) -> dict[str, Any]:
+    """Train the rung-3 / role / permuted-role-placebo models on ``train_table``'s
+    mechanistic outcome and evaluate them on the disjoint ``test_table`` (e.g.
+    the held-out playoffs), macro over recurring test lineups, with a bootstrap
+    CI on ``rmse(rung 3) - rmse(role)``."""
+
+    from courtgraph.chemistry.baseline_ladder import bootstrap_group_delta
+
+    role_cfg = role_config or RoleInteractionConfig()
+    space = FeatureSpace.from_training(train_table)
+    _, train_design = mechanistic_table_and_design(
+        space, train_table, train_attribution, outcome, min_fga=min_fga
+    )
+    test_kt, test_design = mechanistic_table_and_design(
+        space, test_table, test_attribution, outcome, min_fga=min_fga
+    )
+
+    rung3 = HierarchicalRidge.fit(train_design, space, config=config)
+    role = RoleClusterInteraction.fit(train_design, space, clustering, config=role_cfg)
+    role_placebo = RoleClusterInteraction.fit(
+        train_design, space, permuted_clustering(clustering, seed + 1), config=role_cfg
+    )
+
+    groups: dict[str, list[int]] = {}
+    for i, stint in enumerate(test_kt):
+        groups.setdefault(stint.offense_lineup_id, []).append(i)
+    groups = {k: v for k, v in groups.items() if len(v) >= 5}
+    keys = list(groups)
+    ga = {g: np.asarray(groups[g], dtype=np.int64) for g in keys}
+    realized = _group_realized(test_design, groups)
+    y = np.array([realized[k] for k in keys])
+
+    def _pt(model: Any) -> FloatArray:
+        pr = model.group_predictive(test_design, ga)
+        return np.array([pr[k][0] for k in keys])
+
+    p3, prole, pplc = _pt(rung3), _pt(role), _pt(role_placebo)
+    return {
+        "outcome": outcome,
+        "n_test_lineups": len(keys),
+        "rung3_macro_rmse": _rmse(p3, y),
+        "role_macro_rmse": _rmse(prole, y),
+        "role_placebo_macro_rmse": _rmse(pplc, y),
+        "delta_role_vs_rung3": bootstrap_group_delta(
+            p3, prole, y, n_boot=n_boot, seed=seed
+        ),
+        "delta_role_vs_placebo": bootstrap_group_delta(
+            pplc, prole, y, n_boot=n_boot, seed=seed + 1
+        ),
+    }
