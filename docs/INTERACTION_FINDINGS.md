@@ -398,9 +398,40 @@ likelihood); placebo permutes the `λ_i → player` map (bijection, same exposur
 - Held-out RMSE moves < 0.5 % vs rung 3 and is matched by the placebo.
 
 "A player's average bump to lineups with strong teammates," measured on lineup
-*value*, does not exist beyond additive talent at this scale. The remaining
-place a lift could hide is Phase B's estimand — a teammate's **individual**
-production, not the lineup's net rating.
+*value*, does not exist beyond additive talent at this scale.
+
+### Phase B — direct lift on teammate individual production (2026-09-02)
+
+`courtgraph phase-b`. The keystone: a per-(player, stint) production ingest
+(`courtgraph player-production` — every made FG / FT / assist attributed to a
+stint **and** a player, 99.2 % event match on the real data, validated against
+known stars) feeds a model whose outcome is each offensive player-stint's own
+**credited production per 100** — not the lineup's net rating. The design is
+`μ + context + base_k` (the receiver's own EM-shrunk level) plus the pooled
+lift of the receiver's four teammates, `lift_i ~ N(0, τ_lift²)`. Reported at
+`assist_credit` 0.0 (points only) and 0.5.
+
+On the 297k data, 441 held-out receivers (chronological split):
+
+| outcome | lift vs **base-only** | lift vs giver-shuffle placebo |
+|---|---|---|
+| points only | +0.01 [−0.12, +0.13] | +0.63 [+0.44, +0.82] |
+| points + 0.5·assists | −0.08 [−0.26, +0.11] | +0.91 [+0.66, +1.16] |
+
+**Another null.** The lift model does **not** beat the base-only model — adding
+"who the receiver's teammates were" does not improve out-of-sample prediction
+of his individual production. It does beat the *placebo*, but that only says
+real teammate assignments are less harmful than random ones, not that the lift
+terms help. The model fits large lift coefficients in sample (|lift| up to
+4.6 pts/100 — negative for high-usage bigs like Giannis / Embiid, i.e. usage
+cannibalisation collinear with their own base) but they do not generalise.
+
+**This closes the last open estimand.** A player's effect on teammates —
+whether measured on lineup value (rungs 3–5, Phase A), across roster changes
+(transaction backtest), or on teammates' individual production (Phase B) — is
+not a transferable quantity beyond additive talent, at this data scale, on
+these evaluations. Unseen giver-receiver and transaction-cohort Phase-B checks
+are documented follow-ups but the base-only comparison already settles it.
 
 ## Transaction backtest — roster changes as natural experiments (2026-09-02)
 

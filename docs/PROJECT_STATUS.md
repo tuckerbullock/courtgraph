@@ -202,8 +202,16 @@ feed), not an independent lineage. No demonstrated betting edge exists.
     (mean |Δ| gap −0.30 [−0.63, +0.03]). A player's lineup-value contribution
     transfers across a team change as cleanly as a non-mover's stays put — the
     best-powered test in the project, and a clean null.
-  - Remaining "could still flip it" work: per-player production ingest → §45
-    Phase B (direct lift on individual production) → defensive side.
+  - **§45 Phase B — null (2026-09-02, `courtgraph player-production` +
+    `phase-b`).** A per-(player, stint) production ingest (99.2 % event match,
+    validated vs known stars) feeds a lift model on teammates' *individual*
+    production. The lift terms do not beat a base-only (receiver's own level)
+    model out of sample (points-only +0.01 [−0.12, +0.13]). **Closes the last
+    open estimand** — a player's effect on teammates is not transferable beyond
+    additive talent, whether measured on lineup value, roster changes, or
+    individual production.
+  - Remaining: defensive side (`matchups` surface acquired) — run for
+    completeness.
 
 ## Not started
 - Nullable `days_rest` (stint schema v3) for the season-opener `missing_context`
