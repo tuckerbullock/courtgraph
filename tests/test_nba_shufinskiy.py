@@ -22,6 +22,7 @@ from _shufinskiy_fixture import (  # noqa: E402
 )
 from courtgraph.ingest._paths import OutputPathError  # noqa: E402
 from courtgraph.ingest.shufinskiy import (  # noqa: E402
+    _DATANBA_EVENT_KEYS,
     CONVERTER_VERSION,
     ShufinskiyArchiveError,
     build_snapshot,
@@ -132,13 +133,28 @@ class ShufinskiyConverterTests(unittest.TestCase):
     def tearDown(self) -> None:
         self._dir.cleanup()
 
-    def test_emits_the_v1_layout_with_padded_game_ids_and_gitignore(self) -> None:
-        self.assertEqual(self.index["snapshot_format"], "stats_nba_pbpstats/v1")
+    def test_emits_the_v2_layout_with_padded_game_ids_and_gitignore(self) -> None:
+        self.assertEqual(self.index["snapshot_format"], "stats_nba_pbpstats/v2")
         self.assertEqual(
             {g["game_id"] for g in self.index["games"]},
             {"0042400081", "0042400082", "0042400083"},
         )
         self.assertIn("*", (self.snap.out_dir / ".gitignore").read_text())
+
+    def test_emits_the_data_nba_pbp_surface(self) -> None:
+        for game in self.index["games"]:
+            gid = game["game_id"]
+            self.assertEqual(game["data_nba_pbp"], f"pbp/data_{gid}.json")
+            payload = json.loads(
+                (self.snap.out_dir / "pbp" / f"data_{gid}.json").read_text()
+            )
+            self.assertEqual(payload["g"]["gid"], gid)
+            self.assertTrue(payload["g"]["pd"])
+            period0 = payload["g"]["pd"][0]
+            self.assertEqual(period0["p"], 1)
+            self.assertTrue(period0["pla"])
+            # event dicts carry only the data.nba.com keys that were populated
+            self.assertLessEqual(set(period0["pla"][0]), set(_DATANBA_EVENT_KEYS))
 
     def test_metadata_is_derived_not_fabricated(self) -> None:
         by_id = {g["game_id"]: g for g in self.index["games"]}

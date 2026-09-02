@@ -365,8 +365,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--archive-dir",
         type=Path,
         required=True,
-        help="directory holding the archive's nbastats*.csv / datanba*.csv / "
-        "shotdetail*.csv (one file per provider, or one per provider per season)",
+        action="append",
+        help="directory holding the archive's nbastats_*.csv / datanba_*.csv / "
+        "shotdetail_*.csv (one file per provider, or one per provider per "
+        "season). Repeatable -- pass several season-range dirs to build one "
+        "combined snapshot.",
     )
     shuf_selection = shuf.add_mutually_exclusive_group(required=True)
     shuf_selection.add_argument(
@@ -384,6 +387,39 @@ def build_parser() -> argparse.ArgumentParser:
         "--out-dir", type=Path, required=True, help="snapshot directory to create"
     )
     shuf.add_argument("--json", action="store_true", help="print result as JSON")
+
+    live = subparsers.add_parser(
+        "fetch-live",
+        help="optional rate-limited live acquisition from stats.nba.com "
+        "(DATA_SOURCES.md §5.1; cache-and-freeze). Fills gaps the frozen "
+        "archive cannot: boxscore period starters, the current season.",
+    )
+    live.add_argument(
+        "--cache-dir",
+        type=Path,
+        required=True,
+        help="content-addressed live cache (created if absent; reused)",
+    )
+    live_action = live.add_mutually_exclusive_group(required=True)
+    live_action.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="five cheap requests to confirm this machine can reach stats.nba.com",
+    )
+    live_action.add_argument(
+        "--period-starters",
+        nargs="+",
+        metavar="GAME_ID",
+        help="fetch boxscoretraditionalv2 for these games and write "
+        "game_details/stats_boxscore_<gid>.json into --snapshot-dir",
+    )
+    live.add_argument(
+        "--snapshot-dir",
+        type=Path,
+        default=None,
+        help="snapshot to write fetched boxscores into (with --period-starters)",
+    )
+    live.add_argument("--json", action="store_true", help="print result as JSON")
 
     app = subparsers.add_parser(
         "app", help="open a local browser explorer and synthetic sandbox"
@@ -1150,6 +1186,63 @@ def _cmd_snapshot_from_shufinskiy(args: argparse.Namespace, stream: TextIO) -> i
     return 0
 
 
+def _cmd_fetch_live(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.ingest.live_fetch import (
+        LiveAccessBlocked,
+        LiveCache,
+        LiveClient,
+        smoke_test,
+    )
+
+    if args.smoke_test:
+        try:
+            summary = smoke_test(args.cache_dir)
+        except LiveAccessBlocked as exc:
+            print(f"fetch-live: BLOCKED — {exc}", file=stream)
+            return 2
+        if args.json:
+            print(json.dumps(summary, indent=2), file=stream)
+        else:
+            print(
+                f"fetch-live smoke test: {summary['ok']}/{summary['requests']} ok",
+                file=stream,
+            )
+            for err in summary["errors"]:
+                print(f"  {err}", file=stream)
+        return 0 if summary["ok"] > 0 else 1
+
+    # --period-starters
+    if args.snapshot_dir is None:
+        print("fetch-live: --period-starters requires --snapshot-dir", file=stream)
+        return 2
+    client = LiveClient(LiveCache(args.cache_dir))
+    dest = Path(args.snapshot_dir) / "game_details"
+    dest.mkdir(parents=True, exist_ok=True)
+    written: list[str] = []
+    failed: list[str] = []
+    for gid in args.period_starters:
+        try:
+            payload = client.fetch(
+                "boxscoretraditionalv2", {"GameID": str(gid).zfill(10)}
+            )
+        except LiveAccessBlocked as exc:
+            print(f"fetch-live: BLOCKED after {len(written)} — {exc}", file=stream)
+            return 2
+        except Exception as exc:  # noqa: BLE001 - report and continue
+            failed.append(f"{gid}: {exc}")
+            continue
+        out = dest / f"stats_boxscore_{str(gid).zfill(10)}.json"
+        out.write_text(json.dumps(payload))
+        written.append(out.name)
+    if args.json:
+        print(json.dumps({"written": written, "failed": failed}, indent=2), file=stream)
+    else:
+        print(f"fetch-live: wrote {len(written)} boxscore(s)", file=stream)
+        for err in failed:
+            print(f"  failed {err}", file=stream)
+    return 0 if not failed else 1
+
+
 def _cmd_predict(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.chemistry.pipeline import predict_lineup
 
@@ -1202,6 +1295,7 @@ _COMMANDS = {
     "demo": _cmd_demo,
     "ingest": _cmd_ingest,
     "snapshot-from-shufinskiy": _cmd_snapshot_from_shufinskiy,
+    "fetch-live": _cmd_fetch_live,
     "fit": _cmd_fit,
     "baselines": _cmd_baselines,
     "transport": _cmd_transport,
