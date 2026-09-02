@@ -2,7 +2,28 @@
 
 Last updated: 2026-09-01
 
-## Active
+## Active — the "could still flip it" arc (user: "yesss all of these")
+
+Different estimands, not "does γ_ij exist". Order: **D → B → C → E.**
+
+- **§45 Phase A — DONE** (`task/player-lift-phase-a`, PR pending). Pooled `λ_i`
+  lift scalar on lineup value + player-permutation placebo. **Null**, as §45.2
+  predicted: full-fit `τ_λ²` at the grid floor (1e-5), |λ_i| ≤ 0.0003, and the
+  placebo recovers the *exact same* `τ_λ` per fold. Held-out RMSE within 0.5 %
+  of rung 3, matched by the placebo. Written up in `INTERACTION_FINDINGS.md`
+  §45.
+- **D — transaction backtest (NEXT)** — cohort derived from our own stint data
+  (~948 moves: 324 mid-season + 624 clean cross-season, meaningful exposure
+  each side). Does a player's lineup-value contribution move with him across a
+  team change, or does part stay behind (roster fit)? Leakage-safe: train
+  excluding the post-move lineups; predict with the transferred `α`; compare to
+  realized; phantom-transaction placebo. Best-powered test in the project.
+- **B → C → E block** — per-player production ingest → §45 Phase B lift model →
+  defensive side (`matchups` surface acquired). B is the ~1–2 week keystone.
+
+---
+
+## Superseded (Task 2, merged PR #25)
 
 **Task 2 of the autonomous work queue: maximal data acquisition + dual-surface
 ingest.** Branch `task/data-acquisition`.

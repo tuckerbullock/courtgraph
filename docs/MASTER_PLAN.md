@@ -4710,8 +4710,10 @@ Use synthetic or clearly labeled hypothetical examples until suitable data permi
 
 # 45. Player-lift: a player's effect on teammates' individual production
 
-**Added:** 2026-09-01. **Status:** backlog, not active implementation. Appended
-after §44; does not reorder the roadmap or expand research cycle 1.
+**Added:** 2026-09-01. **Status:** Phase A **done and null** (2026-09-02,
+`courtgraph player-lift` — see `docs/INTERACTION_FINDINGS.md` §45); Phase B and
+the transaction backtest active. Does not reorder the roadmap or expand
+research cycle 1.
 
 ## 45.1 Why this is a distinct question
 

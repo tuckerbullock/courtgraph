@@ -191,8 +191,12 @@ feed), not an independent lineage. No demonstrated betting edge exists.
     `docs/INTERACTION_FINDINGS.md` "Confirmation → Hardening".
   - **Data doubled (2026-09-02):** RS dataset 266,518 → 536,974 stints (8
     seasons; +1,523 games recovered by the `data_nba` surface). Model-ladder /
-    `confirm` re-run at the new scale is in progress — the power question the
-    hardening flagged. Open next: §45 player-lift; §21 role features.
+    `confirm` re-run at the new scale sharpened the negative.
+  - **§45 Phase A — null (2026-09-02, `courtgraph player-lift`).** A pooled
+    lift scalar per player on lineup value is indistinguishable from zero and
+    from a player-scrambled placebo (identical `τ_λ` per fold; full-fit `τ_λ²`
+    at the grid floor). Next in the "could still flip it" arc: transaction
+    backtest (D), then per-player production ingest → Phase B → defensive side.
 
 ## Not started
 - Nullable `days_rest` (stint schema v3) for the season-opener `missing_context`

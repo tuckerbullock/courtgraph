@@ -359,7 +359,8 @@ marginal points/100 signal. `RESEARCH_CONTRACT.md` §17.1 remains **not met**.
 - **Talent absorption.** If "makes teammates better" is a stable individual
   trait, it is already inside a player's additive coefficient. These models
   cannot separate "no interaction" from "interaction collinear with average
-  individual impact." → the *player-lift* backlog item.
+  individual impact." → the *player-lift* item (§45; Phase A below, Phase B
+  and the transaction backtest pending).
 - **No features.** Every model uses bare player indicators. Role / skill
   complementarity (spacing, playmaker-finisher, rim coverage) would only show
   as a pair term if that exact pair recurs; parameterised by role it might
@@ -370,6 +371,36 @@ marginal points/100 signal. `RESEARCH_CONTRACT.md` §17.1 remains **not met**.
 - **Dynamic chemistry** (develops over a season) — contract §27, out of cycle 1.
 - **Offense-only.** Rung 4/5 model offensive pairs only; defensive `γ_ij^def`
   is a documented follow-up.
+
+## §45 Phase A — pooled player-lift on lineup value (2026-09-02)
+
+`courtgraph player-lift`. One EM-shrunk scalar per player, `λ_i ~ N(0, τ_λ²)`,
+added to the rung-3 frame as `Σ_{i∈off} λ_i·(A_off,s − α_i)` — a lift term that
+rewards lineups where a high-`λ` player shares the court with strong teammates.
+Two-stage fit (α frozen from rung 3, ridge the residual, `τ_λ` by marginal
+likelihood); placebo permutes the `λ_i → player` map (bijection, same exposure).
+
+**Another null, as §45.2 predicted.** On both 297k (2020-24) and 537k
+(8-season):
+
+| holdout | rung 3 | lift | placebo | τ_λ real / placebo |
+|---|---|---|---|---|
+| chronological | 6.47 | 6.43 | 6.45 | 0.032 / **0.032** |
+| unseen_pair | 18.90 | 18.92 | 18.90 | 0.032 / **0.032** |
+| unseen_lineup | 4.60 | 4.57 | 4.59 | 0.017 / **0.017** |
+
+- The full-fit marginal likelihood picks `τ_λ² = 1e-5` (the grid floor):
+  **no evidence for a nonzero lift variance.** |λ_i| ≤ 0.0003 pts/100 per unit
+  of teammate-talent surplus.
+- Per fold, the permutation placebo recovers the **exact same** `τ_λ` — the
+  variance the model finds is not player-specific; it is the pair-terms story
+  again (parameter noise absorption, not an asymmetric lift).
+- Held-out RMSE moves < 0.5 % vs rung 3 and is matched by the placebo.
+
+"A player's average bump to lineups with strong teammates," measured on lineup
+*value*, does not exist beyond additive talent at this scale. The remaining
+place a lift could hide is Phase B's estimand — a teammate's **individual**
+production, not the lineup's net rating.
 
 ## What would change the verdict
 
