@@ -269,6 +269,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--bootstrap", type=int, default=120, help="rung-2 band resamples"
     )
     player_lift.add_argument("--seed", type=int, default=0, help="seed")
+    player_lift.add_argument(
+        "--side",
+        choices=("offense", "defense"),
+        default="offense",
+        help="lift keyed on the offensive (default) or defensive lineup",
+    )
     player_lift.add_argument("--json", action="store_true", help="print result as JSON")
 
     phase_b = subparsers.add_parser(
@@ -1039,7 +1045,9 @@ def _cmd_player_lift(args: argparse.Namespace, stream: TextIO) -> int:
         print("player-lift: --bootstrap must be >= 0", file=stream)
         return 2
     try:
-        result = run_player_lift(args.input, seed=args.seed, n_boot=args.bootstrap)
+        result = run_player_lift(
+            args.input, seed=args.seed, n_boot=args.bootstrap, side=args.side
+        )
     except (ValueError, FileNotFoundError, OSError) as exc:
         print(f"player-lift: {exc}", file=stream)
         return 2

@@ -184,6 +184,27 @@ class PlayerLiftTests(unittest.TestCase):
             self.assertIn("z_sd", h.lift_calibration)
         self.assertTrue(result.top_lifts)
 
+    def test_defensive_side_runs_and_differs_from_offense(self) -> None:
+        import numpy as np
+
+        from courtgraph.chemistry.features import FeatureSpace
+        from courtgraph.chemistry.player_lift import PlayerLift
+
+        table, _ = _lift_dataset(n_stints=9000, seed=6)
+        space = FeatureSpace.from_training(table)
+        design = space.build(table)
+        off = PlayerLift.fit(design, space, side="offense")
+        deff = PlayerLift.fit(design, space, side="defense")
+        self.assertEqual(deff.side, "defense")
+        self.assertEqual(deff.variance_components()["side"], "defense")
+        # the two side fits are not identical (different lineup keyed)
+        self.assertFalse(np.array_equal(off.lambda_, deff.lambda_))
+        # planted lift is on the offensive side -> defensive lift is near zero
+        self.assertLess(
+            deff.variance_components()["lambda_abs_max"],
+            off.variance_components()["lambda_abs_max"] + 1e-9,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
