@@ -4,111 +4,105 @@ Last updated: 2026-09-01
 
 ## State
 
-Done — **candidate idea #3: skill redundancy / anti-synergy, built and run on
-the 266k real regular-season stints.** Branch `task/redundancy-interaction`
-off `main`. Committed; PR open.
+Done — **better-powered confirmation of the three interaction positives, run
+on the 266k real regular-season stints.** Branch `task/confirmation-power` off
+`main`. Committed; PR open.
 
-**Result: every kind of offensive skill concentration is associated with
-slightly-below-additive lineup value — all six `ρ_d` coefficients are
-negative.** The anti-synergy hypothesis is confirmed *directionally in-sample*
-(strongest for usage and offensive rebounding), with a weak (~0.5 %) but
-placebo-surviving held-out signal on the unseen-lineup holdout. It is the
-weakest of the three positive results, but the sign uniformity is a clean,
-interpretable statement and it does **not** degrade under temporal drift the
-way the 15-cell role-cluster model does. All results preserved.
+**Result: one of the three survives. Role-conditioning significantly improves
+prediction of a lineup's three-point-attempt share (`three_share`) — vs the
+rung-3 baseline AND vs the permuted-role placebo, robust across K = 5 and
+K = 7, on the widened 120-group unseen-lineup holdout. The aggregate
+points/100 role effect is marginal and K = 5-dependent; the redundancy effect
+does not survive.** All results preserved.
 
-## What was built (`69d1271`)
+## What was built (`~confirmation-power`)
 
-- **`fit_augmented_em`** gained a dense-extra-block path (`extra_dense`): the
-  player × feature Gram cross-terms reuse `_cross_ctx`; everything else is the
-  same EM. Rung 4 / role behavior is unchanged (still the sparse index path).
-- **`RoleClustering.player_vector`** — the standardized role vector per player
-  (their highest-exposure season), needed for the concentration features.
-- **`chemistry/redundancy.py` + `redundancy_eval.py` + `courtgraph redundancy
-  --input <stints> --profiles <profiles>`** — the interaction is D = 6
-  coefficients `ρ_d` on concentration features:
+- **`make_all_splits`** threads `n_lineups` — the `unseen_lineup` holdout
+  widens 60 → 120 groups. (`unseen_pair` stays at 40: the 15 %-of-stints
+  exposure budget caps it; the bootstrap CI carries that uncertainty.)
+- **`bootstrap_group_delta`** (`baseline_ladder.py`) — resamples the held-out
+  group means with replacement (3,000×) and reports mean / 95 % CI /
+  P(delta > 0) for `RMSE(baseline) − RMSE(model)`. CI excluding 0 = the
+  improvement is not group-sampling noise.
+- **`courtgraph confirm --input <stints> --profiles <profiles> --snapshot-dir
+  <snap> [--k 3,5,7] [--lineups 120] [--boot N]`** — re-runs role, redundancy
+  and mechanistic `three_share` on both structural holdouts across a K sweep,
+  each with a CI vs rung 3 and vs the permuted-role placebo.
+- 223 tests; ruff / mypy / dep-free clean.
 
-      conc_d = (Σ_i z_id)² − Σ_i z_id²   over the offensive lineup's role vectors
+## Result — 266k RS stints, K sweep {3, 5, 7}, 3,000 bootstrap resamples
 
-  positive when the players align on dimension `d` ("redundant"). `ρ_d < 0`
-  means concentrating skill `d` hurts. Compared vs rung 2 / rung 3 / a
-  permuted-role placebo on the three leakage-safe holdouts.
-- Validated on synthetic: recovers a planted `ρ` vector (corr > 0.9, sign of
-  the strongest effect); the permuted-role placebo shrinks `τ_ρ` and fits
-  worse. 220 tests; ruff / mypy / dep-free clean.
+`courtgraph confirm … --k 3,5,7 --lineups 120 --boot 3000`. Result:
+`data/nba_snapshots/rs_2020_2024/chem_confirm_eval.json` (gitignored). Holdout
+groups: unseen_lineup **120**, unseen_pair **40**.
 
-## Result — 266k RS stints, K = 5, `τ_ρ` = 0.18 pts/100
+### `three_share` — the confirmed positive
 
-`courtgraph redundancy --input .../out/stints.jsonl --profiles
-.../player_profiles.jsonl --clusters 5 --bootstrap 100`. Result:
-`data/nba_snapshots/rs_2020_2024/chem_redundancy_eval.json` (gitignored).
+`RMSE(rung 3) − RMSE(role)` and `RMSE(placebo) − RMSE(role)` on the 120-group
+unseen-lineup holdout (positive = role better):
 
-### The fitted `ρ_d` — all negative
-
-Points per 100 per unit of standardized concentration (real role vectors /
-permuted-role placebo):
-
-| dimension | ρ_d (real) | ρ_d (placebo) |
-|---|---|---|
-| oreb_per100 | **−0.202** | +0.085 |
-| usage | **−0.189** | +0.074 |
-| rim_rate | −0.121 | +0.084 |
-| assist_per100 | −0.062 | +0.048 |
-| three_rate | −0.043 | −0.156 |
-| ft_rate | −0.033 | −0.115 |
-
-**Every offensive skill concentration is a (small) penalty.** The largest:
-concentrating **offensive rebounding** and **usage** — the "two ball-dominant
-creators clash / not enough shots to go around" and "two crash-the-glass bigs"
-stories. **Three-point-attempt concentration is the *least*-penalized
-(−0.04, near zero)** — more shooters is close to additive, consistent with the
-spacing intuition (shooters don't clash), though not a positive effect. The
-placebo `ρ` have mixed signs and no coherent pattern.
-
-### Held-out macro RMSE
-
-| holdout | rung 3 | redundancy | permuted-role placebo |
+| K | role RMSE | vs rung 3 (95 % CI) | vs placebo (95 % CI) |
 |---|---|---|---|
-| chronological | **3.551** | 3.559 | 3.557 |
-| unseen_pair | 19.203 | **19.193** | 19.216 |
-| unseen_lineup | 5.256 | **5.228** | 5.258 |
+| 3 | 0.0325 | +0.0006 [+0.0001, +0.0012] ✓ | +0.0003 [−0.0003, +0.0008] |
+| **5** | **0.0321** | **+0.0010 [+0.0004, +0.0016] ✓** | **+0.0008 [+0.0002, +0.0014] ✓** |
+| **7** | **0.0321** | **+0.0010 [+0.0003, +0.0017] ✓** | **+0.0011 [+0.0003, +0.0018] ✓** |
 
-- **Structural holdouts:** redundancy beats rung 3 by 0.05 % / 0.53 % and its
-  placebo by 0.12 % / 0.57 %. Small, same direction, clean calibration.
-- **chronological:** essentially tied with rung 3 and the placebo (~3.55) —
-  it does **not** blow up under drift the way the 15-parameter role-cluster
-  model does (that model was 4.49). With only 6 parameters there is little to
-  overfit to the era.
+At K = 5 and K = 7 the improvement is significant against **both** the rung-3
+baseline and the permuted-role placebo, and stable across the K sweep. Rung-3
+RMSE on this outcome is ~0.033, so the effect is ~3 % of that — real but small.
+On the 40-group unseen_pair holdout nothing reaches significance (P 0.6–0.9,
+CI touches 0) — that holdout is too small.
 
-## Verdict against the contract
+### Role model on points/100 — marginal, K-fragile
 
-- Not near §17.1's bar (0.5 % on 60 group means, no bootstrap CI).
-- But directionally coherent with the other two positives, and the sign
-  uniformity of the six `ρ_d` is a clean, interpretable in-sample statement:
-  **offensive skill redundancy is a real, small, negative effect**, and a
-  permuted-role placebo produces no such pattern.
+| K | role RMSE | rung 3 RMSE | vs rung 3 (95 % CI) | P>0 |
+|---|---|---|---|---|
+| 3 | 6.062 | 6.061 | −0.002 [−0.071, +0.070] | 0.48 |
+| **5** | **5.959** | 6.061 | **+0.101 [+0.00001, +0.203]** | 0.98 |
+| 7 | 6.040 | 6.061 | +0.019 [−0.103, +0.140] | 0.62 |
 
-## Candidate follow-up ideas — progress
+At K = 5 (the pre-registered config from PR #20) the CI *just* excludes 0 and
+P(delta > 0) ≈ 0.98 against both baseline and placebo — but K = 3 and K = 7
+show nothing. The ~1–2 % points/100 role edge is **K = 5-dependent and not
+robustly established**.
 
-1. Role/skill-conditioned interaction — DONE (PR #20). ~1 % on points/100.
-2. Mechanistic outcomes — DONE (PR #21). 2–5 % on three-point-attempt share,
-   surviving a placebo on all three holdouts. Strongest result.
-3. **Skill redundancy / anti-synergy — DONE (this task). All six ρ_d negative;
-   ~0.5 % placebo-surviving edge on unseen-lineup; no drift penalty.**
-4. Playoffs transport — DONE (PR #18).
-5. **Transaction backtest (T4) — NOT STARTED. Highest build cost / highest
-   evidentiary value.** Uses real trades / injuries as natural experiments:
-   did a team's performance move the direction the model predicted once a
-   specific player left / arrived? Needs a transaction dataset (roster changes
-   with dates) — not currently ingested.
+### Redundancy — not confirmed
 
-Plus: a **better-powered confirmation** of directions #1–#3 combined — widen
-the structural holdouts to ~120 groups, bootstrap the model−rung-3 delta,
-sweep K, and report the three positives together with CIs. Master-plan §45
-player-lift also remains.
+`RMSE(rung 3) − RMSE(redundancy)` = +0.002, 95 % CI [−0.054, +0.051],
+P = 0.55 on the 120-group holdout, unchanged across K (the model uses
+continuous role vectors, which do not depend on K). The 0.5 % edge from PR #22
+was group-sampling noise. The in-sample "all six ρ_d negative" remains a
+descriptive observation, not a held-out predictive gain.
+
+## Revised verdict
+
+**On 266k real regular-season stints, the only non-additive lineup signal that
+survives a properly-powered, bootstrap-CI, K-robust test is a small effect on
+*shot selection*: role-conditioning predicts a lineup's three-point-attempt
+share ~3 % better than additive talent, significant against baseline and
+placebo. Lineup value in *points per 100* is not improved by any interaction
+parameterisation at a level that survives proper power — the aggregate-scoring
+non-additivity, if it exists, is below what 40–120 held-out group means can
+resolve.**
+
+Where lineups differ from the sum of their parts, it is in *how they shoot*,
+not *how much they score*. `RESEARCH_CONTRACT.md` §17.1 (a significant macro
+unseen-lineup improvement in the primary unit) remains **not met**.
+
+## Candidate follow-up ideas — final status
+
+1. Role/skill-conditioned interaction — done; points/100 effect **marginal,
+   K-fragile** on proper power.
+2. Mechanistic outcomes — done; **`three_share` confirmed** (significant, robust).
+3. Skill redundancy — done; **not confirmed** on proper power.
+4. Playoffs transport — done (null).
+5. **Transaction backtest (T4) — NOT STARTED.** Needs a roster-change dataset.
+
+Master-plan §45 player-lift also remains.
 
 ## Next action
 
-Merge this branch. Then the user's call between (a) candidate idea #5
-(transaction backtest — needs a transaction dataset), (b) the better-powered
-confirmation of the #1–#3 positives, or (c) §45 player-lift.
+Merge this branch. Then the user's call between candidate idea #5 (transaction
+backtest — needs data acquisition), §45 player-lift, or writing the cycle-1
+research report now that the interaction question has a defensible answer
+(mostly null; one small shot-selection positive).

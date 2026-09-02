@@ -111,6 +111,48 @@ class LadderComparison:
         }
 
 
+def bootstrap_group_delta(
+    baseline_point: FloatArray,
+    model_point: FloatArray,
+    realized: FloatArray,
+    *,
+    n_boot: int = 2000,
+    seed: int = 0,
+) -> dict[str, float]:
+    """Resample the held-out groups (with replacement) and report the
+    distribution of ``rmse(baseline) - rmse(model)`` over the macro group means.
+    Positive delta = the model is better. ``frac_gt_0`` near 1 (and a CI that
+    excludes 0) means the improvement is unlikely to be group-sampling noise."""
+
+    n = len(realized)
+    if n < 3:
+        return {
+            "n_groups": float(n),
+            "mean": 0.0,
+            "ci_lo": 0.0,
+            "ci_hi": 0.0,
+            "frac_gt_0": 0.0,
+        }
+    rng = np.random.default_rng(seed)
+    base_err = (baseline_point - realized) ** 2
+    model_err = (model_point - realized) ** 2
+    deltas = np.empty(n_boot)
+    idx = np.arange(n)
+    for b in range(n_boot):
+        s = rng.choice(idx, size=n, replace=True)
+        rb = float(np.sqrt(base_err[s].mean()))
+        rm = float(np.sqrt(model_err[s].mean()))
+        deltas[b] = rb - rm
+    deltas.sort()
+    return {
+        "n_groups": float(n),
+        "mean": float(deltas.mean()),
+        "ci_lo": float(deltas[int(0.025 * n_boot)]),
+        "ci_hi": float(deltas[min(int(0.975 * n_boot), n_boot - 1)]),
+        "frac_gt_0": float((deltas > 0).mean()),
+    }
+
+
 def _group_realized(
     design: DesignMatrices, groups: dict[str, list[int]]
 ) -> dict[str, float]:

@@ -169,6 +169,35 @@ def build_parser() -> argparse.ArgumentParser:
     )
     roles.add_argument("--json", action="store_true", help="print result as JSON")
 
+    confirm = subparsers.add_parser(
+        "confirm",
+        help="better-powered re-run of the three interaction positives: wider "
+        "unseen-lineup holdout, K sweep, bootstrap CIs on the model-vs-baseline "
+        "delta",
+    )
+    confirm.add_argument(
+        "--input", type=Path, required=True, help="stint file (.jsonl/.json)"
+    )
+    confirm.add_argument(
+        "--profiles", type=Path, required=True, help="player_profiles.jsonl"
+    )
+    confirm.add_argument(
+        "--snapshot-dir",
+        type=Path,
+        required=True,
+        help="snapshot directory (for shot attribution)",
+    )
+    confirm.add_argument(
+        "--k", default="3,5,7", help="comma-separated role-cluster counts to sweep"
+    )
+    confirm.add_argument(
+        "--lineups", type=int, default=120, help="unseen-lineup holdout groups"
+    )
+    confirm.add_argument(
+        "--boot", type=int, default=2000, help="bootstrap resamples for the CI"
+    )
+    confirm.add_argument("--json", action="store_true", help="print result as JSON")
+
     redundancy = subparsers.add_parser(
         "redundancy",
         help="test skill redundancy / anti-synergy: coefficients on per-role "
@@ -677,6 +706,56 @@ def _cmd_transport(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_confirm(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import run_confirmation_file
+
+    try:
+        k_values = tuple(int(x) for x in str(args.k).split(","))
+    except ValueError:
+        print("confirm: --k must be comma-separated integers", file=stream)
+        return 2
+    if any(k < 2 for k in k_values) or args.boot < 100 or args.lineups < 10:
+        print("confirm: bad --k / --boot / --lineups", file=stream)
+        return 2
+    try:
+        result = run_confirmation_file(
+            args.input,
+            args.profiles,
+            args.snapshot_dir,
+            k_values=k_values,
+            n_lineups=args.lineups,
+            n_boot=args.boot,
+        )
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"confirm: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True), file=stream)
+        return 0
+
+    hg = result.holdout_groups
+    print(
+        f"confirm: K sweep {list(result.k_values)}, {result.n_boot} bootstrap "
+        f"resamples; holdout groups " + ", ".join(f"{k}={v}" for k, v in hg.items()),
+        file=stream,
+    )
+    print(
+        f"  {'model':<16} {'K':>2} {'holdout':<14} {'outcome':<14} "
+        f"{'delta vs r3 (95% CI)':<26} {'P>0':>5}",
+        file=stream,
+    )
+    for r in result.rows:
+        d = r.delta_vs_rung3
+        print(
+            f"  {r.model:<16} {r.k:>2} {r.holdout:<14} {r.outcome:<14} "
+            f"{d['mean']:+.4f} [{d['ci_lo']:+.4f}, {d['ci_hi']:+.4f}]"
+            f"   {d['frac_gt_0']:.2f}",
+            file=stream,
+        )
+    return 0
+
+
 def _cmd_redundancy(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.chemistry.pipeline import run_redundancy
 
@@ -1025,6 +1104,7 @@ _COMMANDS = {
     "baselines": _cmd_baselines,
     "transport": _cmd_transport,
     "roles": _cmd_roles,
+    "confirm": _cmd_confirm,
     "redundancy": _cmd_redundancy,
     "mechanistic": _cmd_mechanistic,
     "player-features": _cmd_player_features,

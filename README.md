@@ -127,21 +127,24 @@ The five regular seasons 2020-21 → 2024-25 have been ingested locally this way
 (5,158 / 5,998 games → 266,518 stints); the data stays gitignored. A
 within-NBA score check is not evidence of predictive accuracy.
 
-## Interaction research (`baselines`, `transport`, `roles`, `mechanistic`, `redundancy`)
+## Interaction research
 
 `courtgraph baselines` compares the model-ladder rungs (2 additive / 3
 hierarchical EB / 4 explicit pairs) on the leakage-safe holdouts;
 `courtgraph transport` trains on one stint file and evaluates on a disjoint
 one (regular season → held-out playoffs); `courtgraph player-features` derives
-per-(player, season) role/skill profiles from a snapshot; `courtgraph roles`
-fits a role-conditioned interaction model against those profiles;
-`courtgraph mechanistic` runs the same comparison on a shot-based outcome
-(shot quality or shot mix) instead of points/100; and `courtgraph redundancy`
-fits per-role concentration coefficients (does doubling up on a skill hurt?).
-What these have and have not shown on the real data — several nulls for
-identity-keyed teammate chemistry, and small directionally-coherent positives
-for role-conditioned lineup non-additivity concentrated in shot selection —
-is the standing record in
+per-(player, season) role/skill profiles from a snapshot; `courtgraph roles`,
+`courtgraph mechanistic` and `courtgraph redundancy` fit role-conditioned
+interaction models against those profiles (on points/100, on a shot-based
+outcome, and on skill-concentration features respectively); and
+`courtgraph confirm` re-runs them with a wider holdout, a K sweep, and
+bootstrap confidence intervals on the improvement.
+
+What these have and have not shown on the 266k real regular-season stints:
+identity-keyed teammate chemistry is **not supported**, and of three
+role-conditioned positives only one survives a properly-powered test — lineups
+predictably shift their **three-point-attempt share** (not their scoring) away
+from the sum of the individuals' tendencies. The standing record is
 [`docs/INTERACTION_FINDINGS.md`](docs/INTERACTION_FINDINGS.md).
 
 ## Local browser app (`courtgraph app`)

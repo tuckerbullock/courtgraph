@@ -301,11 +301,19 @@ def make_unseen_lineup_split(
     )
 
 
-def make_all_splits(table: StintTable, **kwargs: Any) -> dict[str, SplitManifest]:
+def make_all_splits(
+    table: StintTable,
+    *,
+    n_pairs: int = 60,
+    n_lineups: int = 60,
+    max_test_fraction: float = 0.15,
+) -> dict[str, SplitManifest]:
     return {
         "chronological": make_chronological_split(table),
-        "unseen_pair": make_unseen_pair_split(table),
-        "unseen_lineup": make_unseen_lineup_split(table),
+        "unseen_pair": make_unseen_pair_split(
+            table, n_pairs=n_pairs, max_test_fraction=max_test_fraction
+        ),
+        "unseen_lineup": make_unseen_lineup_split(table, n_lineups=n_lineups),
     }
 
 

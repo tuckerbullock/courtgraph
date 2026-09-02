@@ -24,22 +24,31 @@ held-out prediction over hierarchical additive talent on any of four
 leakage-safe evaluation tasks, and the explicit per-pair terms are
 statistically indistinguishable from a placebo with the same parameter count.
 
-**Role-conditioning is a small positive.** The **role-conditioned** model
-(`courtgraph roles`, 2026-09-01) — interaction keyed by the pair of *role
-clusters* the two players belong to, not by identity, so 15 pooled parameters
-replace ~2,357 thin per-identity ones — beats the rung-3 baseline **and** a
-permuted-role placebo by ~1 % on the two structural holdouts on points/100,
-and by 2–5 % on **mechanistic** outcomes (`courtgraph mechanistic`): shot
-quality, and especially **three-point-attempt share**, where role beats the
-placebo on *all three* holdouts. The fitted role-pair matrix reads like the
-spacing mechanism — two shooters together take more threes than additive
-predicts, a rim-running big fewer. This is small (40–60 group means, no
-significance test yet), it *degrades* on points/100 under temporal drift, and
-mechanistic outcomes are not the contract's primary unit — so it does not
-clear §17.1. But it is the first parameterisation to beat both baseline and
-placebo out of sample, it is directionally coherent, and it warrants a
-better-powered confirmation. See "Role-conditioned interaction" and
-"Mechanistic outcomes" below.
+**One small positive survives a properly-powered test: shot selection.**
+Three later parameterisations (role-conditioned interaction, mechanistic
+outcomes, skill redundancy) each showed a ~1–5 % edge on 40–60 group means. A
+better-powered re-run (`courtgraph confirm`, 2026-09-01 — `unseen_lineup`
+widened to 120 groups, a K sweep, and a 3,000-resample bootstrap CI on the
+`RMSE(baseline) − RMSE(model)` delta) keeps **one** of them:
+
+- **`three_share`** — role-conditioning predicts a lineup's
+  three-point-attempt share ~3 % better than rung 3, **significant** (95 % CI
+  excludes 0, P ≈ 1.0) against **both** the baseline and the permuted-role
+  placebo, at K = 5 and K = 7, stable across the K sweep. The fitted role-pair
+  matrix reads like the spacing mechanism: two movement shooters take more
+  threes than additive predicts, a rim-running big fewer.
+- **role on points/100** — marginal: the CI *just* excludes 0 at K = 5 (the
+  pre-registered config) but K = 3 and K = 7 show nothing. K-fragile, not
+  robustly established.
+- **redundancy** — the held-out edge does not survive (CI [−0.05, +0.05]). The
+  in-sample "all six concentration coefficients negative" stays a descriptive
+  observation.
+
+So: where lineups differ from the sum of their parts, it is in **how they
+shoot**, not **how much they score**. Lineup value in points per 100 is not
+improved by any interaction parameterisation at a level that survives proper
+power. `RESEARCH_CONTRACT.md` §17.1 remains **not met**. See "Mechanistic
+outcomes" and "Confirmation" below.
 
 This is **not** a causal claim that no two players affect each other. It is a
 predictive statement about the modelled forms of interaction at this data
@@ -168,9 +177,11 @@ a shooter (+1.40) shows the largest surplus, while two ball-dominant creators
 "star + star". This is a plausible story, but the held-out numbers above, not
 the in-sample matrix, are the evidence.
 
-**Status: suggestive, not established.** Does not clear §17.1. The
-better-powered confirmation — widen the structural holdouts to ~120 groups,
-bootstrap the role−rung-3 delta, sweep K — is the natural next step.
+**Status after the better-powered confirmation (see below): MARGINAL /
+K-fragile.** On the 120-group `unseen_lineup` holdout the K = 5 improvement is
++0.10 pts/100 with a 95 % bootstrap CI that *just* excludes 0
+([+0.00001, +0.20]) — but K = 3 and K = 7 show nothing. Not robustly
+established.
 
 ## Mechanistic outcomes — the same signal, more clearly
 
@@ -203,8 +214,11 @@ The fitted `three_share` role-pair matrix is unambiguous about the mechanism:
 
 That is the spacing intuition, with the sign it predicts, surviving a placebo
 on every holdout. It is not the contract's primary unit (points per 100), so
-it does not clear §17.1 by itself — but it is direct evidence that a real,
-small, role-dependent non-additivity exists in how lineups shoot.
+it does not clear §17.1 by itself. **The better-powered confirmation (below)
+keeps this one:** on the 120-group holdout `RMSE(rung 3) − RMSE(role)` for
+`three_share` is +0.001 with a 95 % bootstrap CI that excludes 0 against both
+the baseline and the placebo, at K = 5 and K = 7. It is the one interaction
+result that is properly established — small, and confined to shot selection.
 
 ## Skill redundancy — a coherent in-sample sign, a faint held-out edge
 
@@ -219,10 +233,35 @@ skill redundancy is a small penalty, largest for **offensive rebounding
 (−0.20)** and **usage (−0.19)** ("two ball-dominant creators clash"), and
 smallest for **three-point-attempt rate (−0.04, ~0)** — more shooters is close
 to additive. The permuted-role placebo's `ρ` have mixed signs and no pattern.
-Held out, redundancy beats its placebo by 0.1 % / 0.6 % on the two structural
-holdouts and is tied on chronological (with only 6 parameters it does not
-overfit the era, unlike the role-cluster model). Faint, but directionally
-consistent with the other two positives.
+Held out, redundancy beat its placebo by 0.1 % / 0.6 % on the two structural
+holdouts on 60 group means. **The better-powered confirmation (below) does not
+keep it:** on the 120-group holdout `RMSE(rung 3) − RMSE(redundancy)` = +0.002
+with a 95 % CI of [−0.05, +0.05], P = 0.55. The 0.5 % edge was
+group-sampling noise. The in-sample sign uniformity stands as a descriptive
+observation; it does not translate to held-out predictive gain.
+
+## Confirmation — bootstrap CIs and a K sweep
+
+`courtgraph confirm` (2026-09-01). The three positives above each rested on
+40–60 group means with no confidence interval. This re-runs all three with the
+`unseen_lineup` holdout widened to **120 groups**, a **K sweep** {3, 5, 7},
+and a **3,000-resample bootstrap CI** on `RMSE(baseline) − RMSE(model)` over
+the held-out group means (vs both the rung-3 baseline and the permuted-role
+placebo). `unseen_pair` stays at 40 groups (exposure budget) and reaches
+significance for nothing.
+
+On the 120-group `unseen_lineup` holdout:
+
+| model | outcome | vs rung 3 (95 % CI) | vs placebo (95 % CI) | robust across K? |
+|---|---|---|---|---|
+| role (K = 5) | points/100 | +0.10 [+0.00001, +0.20] | +0.10 [+0.001, +0.21] | **no** — K 3/7 null |
+| **role (K = 5, 7)** | **three_share** | **+0.001 [+0.0004, +0.0016]** | **+0.0008 [+0.0002, +0.0014]** | **yes** |
+| redundancy | points/100 | +0.002 [−0.05, +0.05] | −0.005 [−0.06, +0.04] | n/a (K-independent) |
+
+**Only `three_share` survives.** Role-conditioning improves prediction of a
+lineup's three-point-attempt share by ~3 % of the rung-3 RMSE, with a CI that
+excludes 0 against both baseline and placebo, at K = 5 and K = 7. Everything
+about lineup *scoring* (points/100) is marginal at best.
 
 ## What this establishes — and what it does not
 
@@ -233,8 +272,15 @@ consistent with the other two positives.
 - Free per-pair chemistry terms and low-rank provision/need factorisation add
   **no** held-out predictive value over it, on four evaluation tasks, and the
   per-pair terms do not beat a parameter-matched placebo.
+- **One small non-additivity in shot selection.** Role-conditioning predicts a
+  lineup's three-point-attempt share ~3 % better than additive, significant
+  against baseline and placebo on a 120-group holdout, robust across K. Two
+  movement shooters take more threes together than additive predicts; a
+  rim-running big fewer. This does **not** extend to points per 100 (marginal,
+  K-fragile) — lineups differ from the sum of their parts in *how they shoot*,
+  not *how much they score*.
 
-**Not established / out of scope — the null does not rule these out:**
+**Not established / out of scope:**
 
 - **Talent absorption.** If "makes teammates better" is a stable individual
   trait, it is already inside a player's additive coefficient. These models
@@ -253,11 +299,12 @@ consistent with the other two positives.
 
 ## What would change the verdict
 
-A better-powered confirmation of the role-conditioned result (it is the weak
-positive above); a direct per-player "lifts teammates' individual production"
-estimate (needs per-player on-court production, a data extension);
-possession-level or mechanistic (shot-quality, turnover-rate) outcomes rather
-than stint points/100; substantially more seasons.
+A direct per-player "lifts teammates' individual production" estimate (needs
+per-player on-court production, a data extension); a transaction backtest
+(roster changes as natural experiments — the contract's T4); possession-level
+outcomes; substantially more seasons (the confirmed `three_share` effect is
+real but ~3 % of a small RMSE — points/100 would need many more seasons to
+resolve a comparable effect).
 
 ## Reproduce
 
@@ -284,6 +331,11 @@ courtgraph redundancy \
   --input data/nba_snapshots/rs_2020_2024/out/stints.jsonl \
   --profiles data/nba_snapshots/rs_2020_2024/player_profiles.jsonl \
   --clusters 5 --bootstrap 100 --json
+courtgraph confirm \
+  --input data/nba_snapshots/rs_2020_2024/out/stints.jsonl \
+  --profiles data/nba_snapshots/rs_2020_2024/player_profiles.jsonl \
+  --snapshot-dir data/nba_snapshots/rs_2020_2024/snap \
+  --k 3,5,7 --lineups 120 --boot 3000 --json
 ```
 
 Result JSONs are gitignored under `data/nba_snapshots/`. Rung-5 numbers:
