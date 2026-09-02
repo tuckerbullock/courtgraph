@@ -271,6 +271,31 @@ def build_parser() -> argparse.ArgumentParser:
     player_lift.add_argument("--seed", type=int, default=0, help="seed")
     player_lift.add_argument("--json", action="store_true", help="print result as JSON")
 
+    txn = subparsers.add_parser(
+        "transaction-backtest",
+        help="contract T4: clean cross-season team switches as natural "
+        "experiments -- does a player's lineup-value contribution move with "
+        "him, or stay with the roster?",
+    )
+    txn.add_argument(
+        "--input", type=Path, required=True, help="multi-season stint file"
+    )
+    txn.add_argument(
+        "--min-possessions",
+        type=int,
+        default=500,
+        help="minimum on-court offensive possessions on each side of the move",
+    )
+    txn.add_argument(
+        "--phantom",
+        type=int,
+        default=None,
+        help="cap the phantom (non-mover) cohort size (default: all)",
+    )
+    txn.add_argument("--boot", type=int, default=3000, help="bootstrap resamples")
+    txn.add_argument("--seed", type=int, default=0, help="seed")
+    txn.add_argument("--json", action="store_true", help="print result as JSON")
+
     mechanistic = subparsers.add_parser(
         "mechanistic",
         help="test whether lineup composition shifts a mechanistic outcome "
@@ -999,6 +1024,60 @@ def _cmd_player_lift(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_transaction_backtest(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import run_transaction_backtest
+
+    if args.boot < 1 or args.min_possessions < 1:
+        print("transaction-backtest: bad --boot / --min-possessions", file=stream)
+        return 2
+    try:
+        result = run_transaction_backtest(
+            args.input,
+            min_poss_each_side=args.min_possessions,
+            n_phantom=args.phantom,
+            n_boot=args.boot,
+            seed=args.seed,
+        )
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"transaction-backtest: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True), file=stream)
+        return 0
+
+    r, p = result.real, result.phantom
+    g = result.real_vs_phantom_abs
+    ar = result.alpha_regression
+    print(
+        f"transaction-backtest: {result.n_transactions} real switches, "
+        f"{result.n_phantom} phantom",
+        file=stream,
+    )
+    print(
+        f"  real     Delta: mean {r.get('mean', 0):+.3f}  "
+        f"|Delta| {r.get('mean_abs', 0):.3f}  RMSE {r.get('rmse', 0):.3f}  "
+        f"P(>0) {r.get('frac_gt_0', 0):.2f}",
+        file=stream,
+    )
+    print(
+        f"  phantom  Delta: mean {p.get('mean', 0):+.3f}  "
+        f"|Delta| {p.get('mean_abs', 0):.3f}  RMSE {p.get('rmse', 0):.3f}",
+        file=stream,
+    )
+    print(
+        f"  |Delta| real - phantom: {g['mean']:+.3f}  "
+        f"95% CI [{g['ci_lo']:+.3f}, {g['ci_hi']:+.3f}]  P(>0) {g['frac_gt_0']:.2f}",
+        file=stream,
+    )
+    print(
+        f"  Delta ~ transferred alpha: slope {ar['slope']:+.3f}  "
+        f"corr {ar['corr']:+.2f}",
+        file=stream,
+    )
+    return 0
+
+
 def _cmd_mechanistic(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.chemistry.pipeline import run_mechanistic
 
@@ -1361,6 +1440,7 @@ _COMMANDS = {
     "transport-mechanistic": _cmd_transport_mechanistic,
     "redundancy": _cmd_redundancy,
     "player-lift": _cmd_player_lift,
+    "transaction-backtest": _cmd_transaction_backtest,
     "mechanistic": _cmd_mechanistic,
     "player-features": _cmd_player_features,
     "predict": _cmd_predict,

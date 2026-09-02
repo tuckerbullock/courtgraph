@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from courtgraph.chemistry.player_lift_eval import PlayerLiftComparison
     from courtgraph.chemistry.redundancy_eval import RedundancyComparison
     from courtgraph.chemistry.role_eval import RoleComparison
+    from courtgraph.chemistry.transaction_backtest import TransactionBacktest
     from courtgraph.chemistry.transport import TransportResult
 
 from courtgraph.chemistry.artifact import load_model, save_model
@@ -359,6 +360,31 @@ def run_player_lift(
         raise ValueError(f"{stints_path}: only {len(table)} stints; need more")
     splits = make_all_splits(table)
     return evaluate_player_lift(table, splits, seed=seed, n_boot=n_boot)
+
+
+def run_transaction_backtest(
+    stints_path: str | Path,
+    *,
+    min_poss_each_side: int = 500,
+    n_phantom: int | None = None,
+    n_boot: int = 3000,
+    seed: int = 0,
+) -> TransactionBacktest:
+    """Contract T4 -- clean cross-season team switches as natural experiments.
+    :mod:`courtgraph.chemistry.transaction_backtest`."""
+
+    from courtgraph.chemistry.transaction_backtest import run_backtest
+
+    table = read_stints(stints_path)
+    if len(table.season_order()) < 2:
+        raise ValueError(f"{stints_path}: need >= 2 seasons for a transaction cohort")
+    return run_backtest(
+        table,
+        min_poss_each_side=min_poss_each_side,
+        n_phantom=n_phantom,
+        n_boot=n_boot,
+        seed=seed,
+    )
 
 
 def run_confirmation_file(
