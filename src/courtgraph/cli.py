@@ -271,6 +271,31 @@ def build_parser() -> argparse.ArgumentParser:
     player_lift.add_argument("--seed", type=int, default=0, help="seed")
     player_lift.add_argument("--json", action="store_true", help="print result as JSON")
 
+    phase_b = subparsers.add_parser(
+        "phase-b",
+        help="master plan §45 Phase B: does a player's presence lift teammates' "
+        "individual per-possession production, beyond additive talent? base-only "
+        "vs base + pooled lift vs a giver-shuffle placebo",
+    )
+    phase_b.add_argument(
+        "--input", type=Path, required=True, help="multi-season stint file"
+    )
+    phase_b.add_argument(
+        "--production",
+        type=Path,
+        required=True,
+        help="player_production.jsonl from `courtgraph player-production`",
+    )
+    phase_b.add_argument(
+        "--assist-credit",
+        type=float,
+        default=0.5,
+        help="fraction of assisted-teammate points in the outcome (default 0.5)",
+    )
+    phase_b.add_argument("--boot", type=int, default=3000, help="bootstrap resamples")
+    phase_b.add_argument("--seed", type=int, default=0, help="seed")
+    phase_b.add_argument("--json", action="store_true", help="print result as JSON")
+
     txn = subparsers.add_parser(
         "transaction-backtest",
         help="contract T4: clean cross-season team switches as natural "
@@ -1050,6 +1075,61 @@ def _cmd_player_lift(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_phase_b(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import run_phase_b
+
+    if args.boot < 1:
+        print("phase-b: --boot must be >= 1", file=stream)
+        return 2
+    try:
+        result = run_phase_b(
+            args.input,
+            args.production,
+            assist_credit=args.assist_credit,
+            seed=args.seed,
+            n_boot=args.boot,
+        )
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"phase-b: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True), file=stream)
+        return 0
+
+    vc = result.variance_components
+    db, dp = result.delta_vs_base, result.delta_vs_placebo
+    print(
+        f"phase-b (assist_credit={result.assist_credit}): "
+        f"tau_lift={vc['tau_lift']:.4f}  |lift| mean={vc['lift_abs_mean']:.3f} "
+        f"max={vc['lift_abs_max']:.3f}  sigma={vc['sigma']:.1f}",
+        file=stream,
+    )
+    print(
+        f"  {result.n_test_receivers} held-out receivers  "
+        f"base RMSE {result.base_macro_rmse:.3f}  lift {result.lift_macro_rmse:.3f}  "
+        f"placebo {result.placebo_macro_rmse:.3f}",
+        file=stream,
+    )
+    print(
+        f"  lift vs base:    {db['mean']:+.3f}  95% CI "
+        f"[{db['ci_lo']:+.3f}, {db['ci_hi']:+.3f}]  P(>0) {db['frac_gt_0']:.2f}",
+        file=stream,
+    )
+    print(
+        f"  lift vs placebo: {dp['mean']:+.3f}  95% CI "
+        f"[{dp['ci_lo']:+.3f}, {dp['ci_hi']:+.3f}]  P(>0) {dp['frac_gt_0']:.2f}",
+        file=stream,
+    )
+    print("  top |lift| players (id: lift ± sd):", file=stream)
+    for t in result.top_lifts[:10]:
+        print(
+            f"    {int(t['player_id']):>8}: {t['lift']:+.3f} ± {t['sd']:.3f}",
+            file=stream,
+        )
+    return 0
+
+
 def _cmd_transaction_backtest(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.chemistry.pipeline import run_transaction_backtest
 
@@ -1501,6 +1581,7 @@ _COMMANDS = {
     "redundancy": _cmd_redundancy,
     "player-lift": _cmd_player_lift,
     "transaction-backtest": _cmd_transaction_backtest,
+    "phase-b": _cmd_phase_b,
     "mechanistic": _cmd_mechanistic,
     "player-features": _cmd_player_features,
     "player-production": _cmd_player_production,
