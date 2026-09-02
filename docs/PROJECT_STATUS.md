@@ -210,8 +210,13 @@ feed), not an independent lineage. No demonstrated betting edge exists.
     open estimand** — a player's effect on teammates is not transferable beyond
     additive talent, whether measured on lineup value, roster changes, or
     individual production.
-  - Remaining: defensive side (`matchups` surface acquired) — run for
-    completeness.
+  - **Defensive-side pooled lift — null (2026-09-02, `player-lift --side
+    defense`).** On 297k and 537k the defensive lift terms make held-out
+    prediction *worse* than rung 3; placebo recovers the identical `τ_λ`.
+  - **The interaction arc is complete.** Symmetric pairs (rungs 4–5), pooled
+    lift on lineup value (Phase A), across roster changes (transaction
+    backtest), on individual production (Phase B), defensive side — **every
+    estimand null.** Next: the cycle-1 research report or the product side.
 
 ## Not started
 - Nullable `days_rest` (stint schema v3) for the season-opener `missing_context`

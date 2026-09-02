@@ -81,11 +81,14 @@ def evaluate_player_lift(
     n_boot: int = 120,
     config: HierarchicalConfig | None = None,
     lift_config: PlayerLiftConfig | None = None,
+    side: str = "offense",
 ) -> PlayerLiftComparison:
     cfg = lift_config or PlayerLiftConfig()
 
     space_all = FeatureSpace.from_training(table)
-    full = PlayerLift.fit(space_all.build(table), space_all, config=cfg, seed=seed)
+    full = PlayerLift.fit(
+        space_all.build(table), space_all, config=cfg, seed=seed, side=side
+    )
 
     holdouts: list[PlayerLiftHoldoutResult] = []
     for kind in _HOLDOUTS:
@@ -98,9 +101,9 @@ def evaluate_player_lift(
 
         rung2 = AdditiveRidge.fit(train_design, space)
         rung3 = HierarchicalRidge.fit(train_design, space, config=config)
-        lift = PlayerLift.fit(train_design, space, config=cfg, seed=seed)
+        lift = PlayerLift.fit(train_design, space, config=cfg, seed=seed, side=side)
         lift_p = PlayerLift.fit(
-            train_design, space, config=cfg, seed=seed, permuted=True
+            train_design, space, config=cfg, seed=seed, permuted=True, side=side
         )
 
         groups = _group_index(test_table, manifest)

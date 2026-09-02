@@ -63,30 +63,34 @@ class PlayerLiftConfig:
 
 
 def _lift_design_columns(
-    offense_index: IntArray, alpha: FloatArray, *, perm: IntArray | None = None
+    lineup_index: IntArray,
+    coef: FloatArray,
+    *,
+    perm: IntArray | None = None,
+    sign: float = 1.0,
 ) -> tuple[IntArray, IntArray, FloatArray]:
     """Return ``(rows, cols, vals)`` COO triplets of the sparse lift design
-    ``D`` (n x n_players): for stint ``s`` with offense player ``p`` in a slot,
-    ``D[s, p] = A_off,s - alpha_p``. ``perm`` (a bijection over player rows)
+    ``D`` (n x n_players): for stint ``s`` with lineup player ``p`` in a slot,
+    ``D[s, p] = sign * (A_s - coef_p)``. ``perm`` (a bijection over player rows)
     relabels the column identity -- the placebo control.
 
-    ``A_off,s`` is a sum, so it is permutation-invariant; only the
+    ``A_s`` is a sum, so it is permutation-invariant; only the
     (player <-> teammate-talent) correspondence is broken by ``perm``."""
 
-    _, k = offense_index.shape
-    a_off = _gather_sum(alpha, offense_index)  # (n,)
+    _, k = lineup_index.shape
+    a_line = _gather_sum(coef, lineup_index)  # (n,)
     rows_list: list[IntArray] = []
     cols_list: list[IntArray] = []
     vals_list: list[FloatArray] = []
     for slot in range(k):
-        p = offense_index[:, slot]
+        p = lineup_index[:, slot]
         seen = p >= 0
         idx = np.flatnonzero(seen)
         pv = p[seen]
         col = pv if perm is None else perm[pv]
         rows_list.append(idx.astype(np.int64))
         cols_list.append(col.astype(np.int64))
-        vals_list.append(a_off[seen] - alpha[pv])
+        vals_list.append(sign * (a_line[seen] - coef[pv]))
     return (
         np.concatenate(rows_list),
         np.concatenate(cols_list),
@@ -95,27 +99,29 @@ def _lift_design_columns(
 
 
 def _lift_normal_equations(
-    offense_index: IntArray,
-    alpha: FloatArray,
+    lineup_index: IntArray,
+    coef: FloatArray,
     weight: FloatArray,
     resid: FloatArray,
     n_players: int,
     *,
     perm: IntArray | None = None,
+    sign: float = 1.0,
 ) -> tuple[FloatArray, FloatArray]:
     """``D' W D`` (p x p) and ``D' W r`` (p,) for the 5-sparse lift design,
-    accumulated over the 25 offense slot-pairs (fully vectorised)."""
+    accumulated over the 25 slot-pairs (fully vectorised). ``sign`` is +1 on
+    offense, -1 on defense (defense enters rung 3 as ``-beta``)."""
 
-    k = offense_index.shape[1]
-    a_off = _gather_sum(alpha, offense_index)
+    k = lineup_index.shape[1]
+    a_line = _gather_sum(coef, lineup_index)
     gram = np.zeros((n_players * n_players,), dtype=np.float64)
     rhs = np.zeros(n_players, dtype=np.float64)
     cols = []
     vals = []
     for slot in range(k):
-        p = offense_index[:, slot]
+        p = lineup_index[:, slot]
         col = np.where(p >= 0, p if perm is None else perm[np.where(p >= 0, p, 0)], -1)
-        val = np.where(p >= 0, a_off - alpha[np.where(p >= 0, p, 0)], 0.0)
+        val = np.where(p >= 0, sign * (a_line - coef[np.where(p >= 0, p, 0)]), 0.0)
         cols.append(col)
         vals.append(val)
     for a in range(k):
@@ -145,6 +151,13 @@ class PlayerLift:
     sigma2: float
     loglik_by_tau2: dict[float, float]
     permuted: bool
+    side: str = "offense"  # "offense" | "defense"
+
+    @property
+    def _index_and_coef(self) -> tuple[str, str, float]:
+        if self.side == "defense":
+            return "defense_index", "defense_coef", -1.0
+        return "offense_index", "offense_coef", 1.0
 
     @classmethod
     def fit(
@@ -155,17 +168,25 @@ class PlayerLift:
         config: PlayerLiftConfig | None = None,
         seed: int = 0,
         permuted: bool = False,
+        side: str = "offense",
     ) -> PlayerLift:
+        if side not in ("offense", "defense"):
+            raise ValueError(f"side must be 'offense' or 'defense', got {side!r}")
         cfg = config or PlayerLiftConfig()
         rung3 = HierarchicalRidge.fit(design, feature_space, config=cfg.hierarchical)
-        alpha = rung3.offense_coef
+        if side == "defense":
+            coef, sign = rung3.defense_coef, -1.0
+            lineup_index = design.defense_index
+        else:
+            coef, sign = rung3.offense_coef, 1.0
+            lineup_index = design.offense_index
         p = feature_space.n_players
         w = np.asarray(design.weight, dtype=np.float64)
         resid = np.asarray(design.y - rung3.predict(design), dtype=np.float64)
 
         perm = np.random.default_rng(seed + 1).permutation(p) if permuted else None
         gram, rhs = _lift_normal_equations(
-            design.offense_index, alpha, w, resid, p, perm=perm
+            lineup_index, coef, w, resid, p, perm=perm, sign=sign
         )
         gram = 0.5 * (gram + gram.T)  # symmetrise (slot-pair loop is asymmetric)
 
@@ -205,15 +226,23 @@ class PlayerLift:
             sigma2=sigma2,
             loglik_by_tau2=loglik,
             permuted=permuted,
+            side=side,
         )
 
     # -- prediction --------------------------------------------------------- #
 
-    def _lift_term(self, design: DesignMatrices) -> FloatArray:
-        rows, cols, vals = _lift_design_columns(
-            design.offense_index, self.rung3.offense_coef
+    def _lineup(self, design: DesignMatrices) -> tuple[IntArray, FloatArray, float]:
+        idx_name, coef_name, sign = self._index_and_coef
+        return (
+            getattr(design, idx_name),
+            getattr(self.rung3, coef_name),
+            sign,
         )
-        out = np.zeros(design.offense_index.shape[0], dtype=np.float64)
+
+    def _lift_term(self, design: DesignMatrices) -> FloatArray:
+        lineup_index, coef, sign = self._lineup(design)
+        rows, cols, vals = _lift_design_columns(lineup_index, coef, sign=sign)
+        out = np.zeros(lineup_index.shape[0], dtype=np.float64)
         np.add.at(out, rows, self.lambda_[cols] * vals)
         return out
 
@@ -242,15 +271,15 @@ class PlayerLift:
 
         base = self.rung3.group_predictive(design, groups)
         lift_all = self._lift_term(design)
+        lineup_index, coef, sign = self._lineup(design)
         # per-group lift design row g (p,) for the variance term
         out: dict[str, tuple[float, float, float]] = {}
-        alpha = self.rung3.offense_coef
         p = self.feature_space.n_players
         for key, rows in groups.items():
             rows = np.asarray(rows, dtype=np.int64)
             w = design.weight[rows]
             total = float(w.sum())
-            r, c, v = _lift_design_columns(design.offense_index[rows], alpha)
+            r, c, v = _lift_design_columns(lineup_index[rows], coef, sign=sign)
             g = np.zeros(p, dtype=np.float64)
             np.add.at(g, c, w[r] * v)
             g /= total
@@ -270,6 +299,7 @@ class PlayerLift:
                 "lambda_abs_mean": float(np.abs(self.lambda_).mean()),
                 "lambda_abs_max": float(np.abs(self.lambda_).max()),
                 "permuted": self.permuted,
+                "side": self.side,
             }
         )
         return vc

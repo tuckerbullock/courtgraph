@@ -348,10 +348,12 @@ def run_player_lift(
     *,
     seed: int = 0,
     n_boot: int = 120,
+    side: str = "offense",
 ) -> PlayerLiftComparison:
     """Master plan §45 Phase A -- fit one EM-shrunk lift scalar per player on
     the rung-3 frame and compare against rungs 2/3 and a player-permutation
-    placebo on the leakage-safe holdouts.
+    placebo on the leakage-safe holdouts. ``side="defense"`` runs the defensive
+    analog (lift keyed on the defensive lineup).
     :mod:`courtgraph.chemistry.player_lift_eval`."""
 
     from courtgraph.chemistry.player_lift_eval import evaluate_player_lift
@@ -360,7 +362,7 @@ def run_player_lift(
     if len(table) < 50:
         raise ValueError(f"{stints_path}: only {len(table)} stints; need more")
     splits = make_all_splits(table)
-    return evaluate_player_lift(table, splits, seed=seed, n_boot=n_boot)
+    return evaluate_player_lift(table, splits, seed=seed, n_boot=n_boot, side=side)
 
 
 def run_phase_b(

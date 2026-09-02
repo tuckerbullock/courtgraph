@@ -55,6 +55,14 @@ improved by any interaction parameterisation at a level that survives proper
 power. `RESEARCH_CONTRACT.md` §17.1 remains **not met**. See "Mechanistic
 outcomes" and "Confirmation" below.
 
+**Every estimand for "a player's effect on teammates" has now been tested and
+every one is null** (2026-09-02): symmetric pair interaction (rungs 4–5),
+pooled asymmetric lift on lineup value (§45 Phase A), the same across roster
+changes (transaction backtest — 585 clean cross-season switches, the
+best-powered test in the project), lift on a teammate's *individual*
+production (§45 Phase B), and the defensive-side pooled lift. A player's
+contribution transfers as cleanly as additive talent predicts, on all of them.
+
 This is **not** a causal claim that no two players affect each other. It is a
 predictive statement about the modelled forms of interaction at this data
 scale, on this evaluation. The distinctions the contract requires (§8) are
@@ -369,8 +377,13 @@ marginal points/100 signal. `RESEARCH_CONTRACT.md` §17.1 remains **not met**.
   SD is ≈ 2.3. Pair effects have far less exposure per parameter. Effects
   below roughly 0.5 pts/100 would need many more seasons to resolve.
 - **Dynamic chemistry** (develops over a season) — contract §27, out of cycle 1.
-- **Offense-only.** Rung 4/5 model offensive pairs only; defensive `γ_ij^def`
-  is a documented follow-up.
+- **Defensive side.** Rung 4/5 model offensive pairs; the defensive analog of
+  the pooled lift (`courtgraph player-lift --side defense`) was run 2026-09-02
+  and is **also null** — on both 297k and 537k, the defensive lift terms make
+  held-out prediction *worse* than rung 3 (e.g. 4.72 vs 4.60 on
+  `unseen_lineup`), and the placebo recovers the identical `τ_λ` per fold. A
+  defensive `γ_ij^def` per-pair model is still a documented follow-up but the
+  pooled-lift result points the same way as everything else.
 
 ## §45 Phase A — pooled player-lift on lineup value (2026-09-02)
 
