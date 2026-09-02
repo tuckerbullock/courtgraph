@@ -402,12 +402,47 @@ likelihood); placebo permutes the `λ_i → player` map (bijection, same exposur
 place a lift could hide is Phase B's estimand — a teammate's **individual**
 production, not the lineup's net rating.
 
+## Transaction backtest — roster changes as natural experiments (2026-09-02)
+
+`courtgraph transaction-backtest` (contract T4). The cohort is derived from the
+stint data itself: **585 clean cross-season team switches** (player's team of
+record changes between consecutive seasons, ≥ 500 offensive possessions each
+side, no split seasons). For each switch A → B (first B season S), rung 3 is fit
+on **seasons strictly before S** — a model that has never seen the player on B —
+and `Δ = possession-weighted (realized − predicted)` over the player's post-move
+stints on B, with the player's `α` *transferred* from his pre-move history. A
+**phantom** cohort (1,200 non-movers given a fake same-team "move") gets the
+identical computation.
+
+If a player's value is partly roster-specific, movers' lineups should scatter
+from the additive prediction *more* than non-movers'. **They do not:**
+
+| cohort | n | mean Δ | mean \|Δ\| | RMSE |
+|---|---|---|---|---|
+| real switches | 585 | +3.32 | 4.69 | 5.69 |
+| phantom (non-movers) | 1,200 | +4.27 | 4.99 | 6.02 |
+
+- **mean \|Δ\| real − phantom = −0.30, 95 % CI [−0.63, +0.03]** — includes 0,
+  leans *negative*. Movers are, if anything, marginally **more** predictable
+  from additive talent than players who stayed put.
+- The large positive mean Δ in **both** cohorts (~+3–4 pts/100) is the
+  stale-model bias (the leakage-safe model is trained on older seasons, and
+  league scoring rose 2016 → 2024) — it cancels in the real-vs-phantom contrast.
+- `Δ` vs the transferred `α`: slope −0.07, corr −0.02 — the gap does **not**
+  track shrinkage of the mover's coefficient.
+
+**A player's lineup-value contribution transfers across a team change as
+cleanly as a non-mover's stays put.** This is the best-powered test in the
+project (585 vs the 40–60 group means the interaction models were limited to)
+and it is a clean null: additive talent is sufficient across roster changes.
+Mid-season trades (fuzzier cutover) are a documented follow-up.
+
 ## What would change the verdict
 
 A direct per-player "lifts teammates' individual production" estimate (needs
-per-player on-court production, a data extension); a transaction backtest
-(roster changes as natural experiments — the contract's T4); possession-level
-outcomes; the defensive side (`matchups` surface, now acquired).
+per-player on-court production, a data extension — §45 Phase B); possession-level
+outcomes; the defensive side (`matchups` surface, now acquired). The transaction
+backtest (contract T4) has been run — a clean null (above).
 
 **Not** more seasons alone: the 2026-09-02 doubling to 537k stints left the
 variance components < 5 % changed and removed rather than sharpened the
