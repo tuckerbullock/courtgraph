@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from courtgraph.chemistry.baseline_ladder import LadderComparison
     from courtgraph.chemistry.confirm import ConfirmationResult
     from courtgraph.chemistry.mechanistic import MechanisticComparison
+    from courtgraph.chemistry.player_lift_eval import PlayerLiftComparison
     from courtgraph.chemistry.redundancy_eval import RedundancyComparison
     from courtgraph.chemistry.role_eval import RoleComparison
     from courtgraph.chemistry.transport import TransportResult
@@ -338,6 +339,26 @@ def run_redundancy(
     )
     splits = make_all_splits(table)
     return evaluate_redundancy(table, splits, clustering, seed=seed, n_boot=n_boot)
+
+
+def run_player_lift(
+    stints_path: str | Path,
+    *,
+    seed: int = 0,
+    n_boot: int = 120,
+) -> PlayerLiftComparison:
+    """Master plan §45 Phase A -- fit one EM-shrunk lift scalar per player on
+    the rung-3 frame and compare against rungs 2/3 and a player-permutation
+    placebo on the leakage-safe holdouts.
+    :mod:`courtgraph.chemistry.player_lift_eval`."""
+
+    from courtgraph.chemistry.player_lift_eval import evaluate_player_lift
+
+    table = read_stints(stints_path)
+    if len(table) < 50:
+        raise ValueError(f"{stints_path}: only {len(table)} stints; need more")
+    splits = make_all_splits(table)
+    return evaluate_player_lift(table, splits, seed=seed, n_boot=n_boot)
 
 
 def run_confirmation_file(
