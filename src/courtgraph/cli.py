@@ -257,6 +257,20 @@ def build_parser() -> argparse.ArgumentParser:
     redundancy.add_argument("--seed", type=int, default=0, help="seed")
     redundancy.add_argument("--json", action="store_true", help="print result as JSON")
 
+    player_lift = subparsers.add_parser(
+        "player-lift",
+        help="master plan §45 Phase A: one EM-shrunk lift scalar per player on "
+        "the rung-3 frame, vs rungs 2/3 and a player-permutation placebo",
+    )
+    player_lift.add_argument(
+        "--input", type=Path, required=True, help="stint file (.jsonl/.json)"
+    )
+    player_lift.add_argument(
+        "--bootstrap", type=int, default=120, help="rung-2 band resamples"
+    )
+    player_lift.add_argument("--seed", type=int, default=0, help="seed")
+    player_lift.add_argument("--json", action="store_true", help="print result as JSON")
+
     mechanistic = subparsers.add_parser(
         "mechanistic",
         help="test whether lineup composition shifts a mechanistic outcome "
@@ -942,6 +956,49 @@ def _cmd_redundancy(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_player_lift(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import run_player_lift
+
+    if args.bootstrap < 0:
+        print("player-lift: --bootstrap must be >= 0", file=stream)
+        return 2
+    try:
+        result = run_player_lift(args.input, seed=args.seed, n_boot=args.bootstrap)
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"player-lift: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True), file=stream)
+        return 0
+
+    vc = result.variance_components
+    print(
+        f"player-lift: tau_lambda={vc['tau_lambda']:.4f}  "
+        f"|lambda| mean={vc['lambda_abs_mean']:.4f} max={vc['lambda_abs_max']:.4f}",
+        file=stream,
+    )
+    print(
+        f"  {'holdout':<14} {'r2':>8} {'r3':>8} {'lift':>8} {'lift-plc':>9}  "
+        f"{'tau_l':>7} {'tau_l-plc':>9}",
+        file=stream,
+    )
+    for h in result.holdouts:
+        print(
+            f"  {h.kind:<14} {h.rung2_macro_rmse:>8.3f} {h.rung3_macro_rmse:>8.3f} "
+            f"{h.lift_macro_rmse:>8.3f} {h.lift_placebo_macro_rmse:>9.3f}  "
+            f"{h.tau_lambda:>7.4f} {h.tau_lambda_placebo:>9.4f}",
+            file=stream,
+        )
+    print("  top |lift| players (id: lift ± sd):", file=stream)
+    for t in result.top_lifts[:10]:
+        print(
+            f"    {int(t['player_id']):>8}: {t['lift']:+.3f} ± {t['sd']:.3f}",
+            file=stream,
+        )
+    return 0
+
+
 def _cmd_mechanistic(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.chemistry.pipeline import run_mechanistic
 
@@ -1303,6 +1360,7 @@ _COMMANDS = {
     "confirm": _cmd_confirm,
     "transport-mechanistic": _cmd_transport_mechanistic,
     "redundancy": _cmd_redundancy,
+    "player-lift": _cmd_player_lift,
     "mechanistic": _cmd_mechanistic,
     "player-features": _cmd_player_features,
     "predict": _cmd_predict,
