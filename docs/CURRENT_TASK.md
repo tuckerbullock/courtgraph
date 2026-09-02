@@ -28,9 +28,22 @@ Different estimands, not "does γ_ij exist". Order: **D → B → C → E.**
   **Closes the last open estimand** — a player's effect on teammates is not a
   transferable quantity beyond additive talent, on any of the three
   measurements (lineup value, roster changes, individual production).
-- **E — defensive side (NEXT)** — `matchups` surface (`boxscorematchupsv3`,
-  acquired) + defensive-lineup roles / redundancy / a defensive lift. The last
-  untested surface; almost certainly another null, run for completeness.
+- **E — defensive side — DONE** (`task/defensive-side`, PR pending).
+  `courtgraph player-lift --side defense`: the pooled lift keyed on the
+  defensive lineup. **Null** — on 297k and 537k the defensive lift terms make
+  held-out prediction *worse* than rung 3 and the placebo recovers the
+  identical `τ_λ` per fold. A defensive per-pair `γ_ij^def` and a
+  `matchups`-surface deep dive remain documented follow-ups but the pooled
+  result points the same way as everything else.
+
+## Arc complete
+
+**Every estimand for "a player's effect on teammates" is now tested — every
+one null.** Symmetric pairs (rungs 4–5), pooled asymmetric lift on lineup
+value (Phase A), across roster changes (transaction backtest, best-powered),
+on individual production (Phase B), defensive side. The interaction question
+has a defensible, comprehensive answer: **not supported.** Next candidate
+work: the cycle-1 research report, or the product side (§44 / issue #8).
 
 ---
 
