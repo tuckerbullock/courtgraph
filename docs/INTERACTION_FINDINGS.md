@@ -33,10 +33,13 @@ widened to 120 groups, a K sweep, and a 3,000-resample bootstrap CI on the
 
 - **`three_share`** — role-conditioning predicts a lineup's
   three-point-attempt share ~3 % better than rung 3, **significant** (95 % CI
-  excludes 0, P ≈ 1.0) against **both** the baseline and the permuted-role
-  placebo, at K = 5 and K = 7, stable across the K sweep. The fitted role-pair
-  matrix reads like the spacing mechanism: two movement shooters take more
-  threes than additive predicts, a rim-running big fewer.
+  excludes 0) against the baseline across the K sweep (3–10). The fitted
+  role-pair matrix reads like the spacing mechanism: two movement shooters take
+  more threes than additive predicts, a rim-running big fewer. **But
+  hardening (2026-09-01) downgrades it**: it beats the permuted-role placebo at
+  only 2 of 6 K values, it does **not** transport to the held-out playoffs
+  (Δ ≈ 0, P(Δ>0) = 0.53), and its shot-mix shift is uncorrelated with scoring
+  (mediation r = 0.03). A small in-distribution regularity, not a value effect.
 - **role on points/100** — marginal: the CI *just* excludes 0 at K = 5 (the
   pre-registered config) but K = 3 and K = 7 show nothing. K-fragile, not
   robustly established.
@@ -255,13 +258,47 @@ On the 120-group `unseen_lineup` holdout:
 | model | outcome | vs rung 3 (95 % CI) | vs placebo (95 % CI) | robust across K? |
 |---|---|---|---|---|
 | role (K = 5) | points/100 | +0.10 [+0.00001, +0.20] | +0.10 [+0.001, +0.21] | **no** — K 3/7 null |
-| **role (K = 5, 7)** | **three_share** | **+0.001 [+0.0004, +0.0016]** | **+0.0008 [+0.0002, +0.0014]** | **yes** |
+| **role (K = 5, 7)** | **three_share** | **+0.001 [+0.0004, +0.0016]** | **+0.0008 [+0.0002, +0.0014]** | vs rung 3 yes; vs placebo K 5/8 only (see Hardening) |
 | redundancy | points/100 | +0.002 [−0.05, +0.05] | −0.005 [−0.06, +0.04] | n/a (K-independent) |
 
 **Only `three_share` survives.** Role-conditioning improves prediction of a
 lineup's three-point-attempt share by ~3 % of the rung-3 RMSE, with a CI that
-excludes 0 against both baseline and placebo, at K = 5 and K = 7. Everything
-about lineup *scoring* (points/100) is marginal at best.
+excludes 0 against both baseline and placebo, at K = 5 and K = 7 in this run.
+Everything about lineup *scoring* (points/100) is marginal at best. The
+Hardening subsection below extends the K sweep and adds two harder tests.
+
+### Hardening — wider K sweep, playoffs transport, mediation
+
+`courtgraph confirm --k 3,4,5,6,8,10 --outcomes three_share,pts_per_shot,rim_share
+--boot 3000` plus `courtgraph transport-mechanistic` (RS → held-out 2024-25
+playoffs), 2026-09-01. Three tests, and `three_share` **weakens** on all three:
+
+1. **Wider K sweep (3–10).** vs **rung 3**, `three_share` role-conditioning
+   beats additive at K = 3, 4, 5, 6, 8 (95 % CI excludes 0) and is marginal at
+   K = 10 — robust. But vs the **permuted-role placebo** the CI excludes 0 at
+   **only K = 5 and K = 8** (K = 3, 4, 6, 10: CI spans 0, P(Δ>0) 0.83–0.94).
+   The "it is the roles, not just the extra parameters" claim holds at 2 of 6 K
+   values, not as a rule.
+2. **Playoffs transport: null.** Trained on the regular season, evaluated on
+   the held-out playoffs (65 recurring lineups), the role model's `three_share`
+   RMSE edge over rung 3 is +0.00005 [−0.0011, +0.0012], P(Δ>0) = 0.53 — no
+   effect. The regularity is regular-season, in-distribution only.
+3. **Mediation ≈ 0.** Over the 120 held-out unseen lineups, the correlation
+   between the role model's incremental `three_share` prediction and the
+   lineup's *scoring* surprise (realized points/100 − rung 3) is **0.03**. The
+   shot-mix shift the model captures (mean |Δ| ≈ 0.3 pp of 3PA share) does not
+   move points.
+
+`pts_per_shot` and `rim_share`: null on every holdout and both K sweeps
+(`rim_share` role-conditioning is slightly *worse* than additive); neither
+transports.
+
+**Revised read:** `three_share` is a small, real, *in-distribution* regularity
+in how role-redundant lineups distribute their shot attempts. It is not a value
+effect (mediation ≈ 0), it does not survive the placebo at most K, and it does
+not transport to a new competitive context (the playoffs). It is the strongest
+non-additivity the ladder has found and it is still well short of
+`RESEARCH_CONTRACT.md` §17.1.
 
 ## What this establishes — and what it does not
 
@@ -273,12 +310,15 @@ about lineup *scoring* (points/100) is marginal at best.
   **no** held-out predictive value over it, on four evaluation tasks, and the
   per-pair terms do not beat a parameter-matched placebo.
 - **One small non-additivity in shot selection.** Role-conditioning predicts a
-  lineup's three-point-attempt share ~3 % better than additive, significant
-  against baseline and placebo on a 120-group holdout, robust across K. Two
-  movement shooters take more threes together than additive predicts; a
-  rim-running big fewer. This does **not** extend to points per 100 (marginal,
-  K-fragile) — lineups differ from the sum of their parts in *how they shoot*,
-  not *how much they score*.
+  lineup's three-point-attempt share ~3 % better than additive on a 120-group
+  in-distribution holdout, significant against the baseline across the K sweep
+  (3–10). Two movement shooters take more threes together than additive
+  predicts; a rim-running big fewer. Hardening bounds it tightly: it beats the
+  permuted-role placebo at only 2 of 6 K, does **not** transport to the
+  held-out playoffs (Δ ≈ 0), and its shot-mix shift is uncorrelated with
+  scoring (mediation r = 0.03). It does **not** extend to points per 100 —
+  lineups differ from the sum of their parts in *how they shoot*, not *how much
+  they score*, and even that difference is in-distribution and value-neutral.
 
 **Not established / out of scope:**
 
@@ -335,7 +375,15 @@ courtgraph confirm \
   --input data/nba_snapshots/rs_2020_2024/out/stints.jsonl \
   --profiles data/nba_snapshots/rs_2020_2024/player_profiles.jsonl \
   --snapshot-dir data/nba_snapshots/rs_2020_2024/snap \
-  --k 3,5,7 --lineups 120 --boot 3000 --json
+  --k 3,4,5,6,8,10 --outcomes three_share,pts_per_shot,rim_share \
+  --lineups 120 --boot 3000 --json
+courtgraph transport-mechanistic \
+  --train data/nba_snapshots/rs_2020_2024/out/stints.jsonl \
+  --test  data/nba_snapshots/all_2025_playoffs/out/stints.jsonl \
+  --train-snapshot data/nba_snapshots/rs_2020_2024/snap \
+  --test-snapshot  data/nba_snapshots/all_2025_playoffs/snap \
+  --profiles data/nba_snapshots/rs_2020_2024/player_profiles.jsonl \
+  --outcome three_share --clusters 5 --boot 3000 --json
 ```
 
 Result JSONs are gitignored under `data/nba_snapshots/`. Rung-5 numbers:

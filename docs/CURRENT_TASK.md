@@ -6,25 +6,39 @@ Last updated: 2026-09-01
 
 **Task 1 of an autonomous work queue (user: "do all of those things ... just
 keep going"): harden the one confirmed interaction result, `three_share`.**
-Branch `task/harden-three-share`.
+Branch `task/harden-three-share`. PR #24. **Code + docs complete; result in.**
 
-The `confirm` run established that role-conditioning predicts a lineup's
-three-point-attempt share ~3 % better than additive (95 % CI excludes 0 vs
-baseline and placebo, K-robust). It is the only interaction positive that
-survives proper power. Before building on it, pressure-test it:
+### Result (2026-09-01)
 
-- **a. Playoffs transport** — train the role `three_share` model on the RS,
-  test on the held-out 2024-25 playoffs. Does the shot-selection
-  non-additivity transport?
-- **b. Mediation** — does the predicted shot-mix shift move *points*? For the
-  held-out lineups, correlate (role's incremental `three_share` prediction)
-  with (the lineup's scoring surprise vs rung 3). If a lineup that "should
-  shoot more threes" scores no better, the effect is real but not useful.
-- **c. `confirm` for the other two shot outcomes** — `pts_per_shot` and
-  `rim_share` deserve the same bootstrap-CI + K-sweep treatment (only
-  `three_share` got it).
-- **d. Robustness** — wider K sweep (up to ~10); sensitivity to the role
-  feature set and the `min_fga` cut.
+Hardening **downgrades `three_share`**. It is a small, real, *in-distribution*
+regularity in how role-redundant lineups distribute shot attempts — not a
+value effect, and it does not generalise to a new context.
+
+- **a. Playoffs transport: NULL.** RS-trained role model, tested on the
+  held-out 2024-25 playoffs (65 recurring lineups): Δ RMSE vs rung 3 =
+  +0.00005 [−0.0011, +0.0012], P(Δ>0) = 0.53. `pts_per_shot` transport also
+  null.
+- **b. Mediation ≈ 0.** Over the 120 held-out unseen lineups, corr( role's
+  incremental `three_share` prediction , lineup scoring surprise vs rung 3 )
+  = **0.03**. Mean |Δ three_share| ≈ 0.3 pp. The shot-mix shift does not move
+  points.
+- **c. Other shot outcomes: null.** `pts_per_shot` and `rim_share` clear
+  neither baseline nor placebo on any holdout / K (`rim_share` role model is
+  slightly *worse* than additive).
+- **d. Wider K sweep (3–10).** vs **rung 3**: `three_share` role model beats
+  additive at K = 3,4,5,6,8 (CI excludes 0), marginal at K = 10 — robust. vs
+  **placebo**: CI excludes 0 at **K = 5 and K = 8 only** (K 3,4,6,10 span 0,
+  P 0.83–0.94). K-fragile against the placebo.
+
+Verdict: strongest non-additivity the ladder has found, still well short of
+`RESEARCH_CONTRACT.md` §17.1. Documented in `docs/INTERACTION_FINDINGS.md`
+("Confirmation → Hardening"). Result JSONs gitignored under
+`data/nba_snapshots/rs_2020_2024/` (`chem_confirm_hardened.json`,
+`chem_tmech_three_share.json`, `chem_tmech_pts_per_shot.json`).
+
+### Next action for task 1
+
+Merge PR #24 (CI green, MERGEABLE). Then start task 2.
 
 ## The work queue (after this task, in order)
 
@@ -60,5 +74,11 @@ explicitly changes them.
 
 ## Next action
 
-Build task 1: mechanistic transport path, mediation analysis, `confirm`
-`--outcomes` support, robustness sweeps. Run on the real data. Write up.
+Merge PR #24, then begin task 2 (recover the ~840 quarantined RS games) on a
+fresh branch. Quarantine scoping already done: `quarantine.jsonl` holds 79,135
+rows but 78,007 are per-possession `split_lineup_possession`; the per-game
+reasons are 503 `network_required`, 207 `unknown_team`, 171
+`pbpstats_reconstruction_failed`, 93 `score_reconciliation_failed`, 81
+`possession_alternation_failed`, 68 `missing_context`, 5 `ambiguous_scoring`.
+Confirm the per-game total against `manifest.json` (not `quarantine.jsonl`)
+first.

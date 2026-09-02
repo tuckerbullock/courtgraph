@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-09-01 (confirmation — one small positive survives, in shot selection)
+Last updated: 2026-09-01 (three_share hardened — in-distribution shot-mix regularity only, no transport, no value)
 
 ## Current phase
 
@@ -162,9 +162,12 @@ feed), not an independent lineage. No demonstrated betting edge exists.
     temporal drift, but the first form to beat baseline and placebo out of
     sample. In-sample role-pair matrix: "star + complementary piece" (+1.4 to
     +1.8) beats "star + star" (+0.8). `docs/CURRENT_TASK.md` has the numbers.
-  - Next: a better-powered confirmation of the role result (wider holdouts,
-    bootstrap the role−rung-3 delta, K sweep), or candidate idea #2
-    (mechanistic outcomes). Also open: §45 player-lift; §21 role features.
+  - Confirmation + hardening done (`courtgraph confirm`,
+    `transport-mechanistic`): only `three_share` beats the baseline, and even
+    that fails the placebo at most K, fails to transport to the playoffs, and
+    is decoupled from scoring (mediation r = 0.03). See
+    `docs/INTERACTION_FINDINGS.md` "Confirmation → Hardening". Open next: §45
+    player-lift; §21 role features; recover quarantined games for power.
 
 ## Not started
 - Recovering the 840 quarantined regular-season games (503 `network_required`,
@@ -239,17 +242,23 @@ well-powered pair-level test in-sample (668 pair groups) and in the playoffs
 selection, not scoring.** Three later parameterisations (`courtgraph roles`,
 `mechanistic`, `redundancy`) each showed a ~1–5 % edge on 40–60 group means. A
 better-powered re-run (`courtgraph confirm` — `unseen_lineup` widened to 120
-groups, a K sweep {3,5,7}, a 3,000-resample bootstrap CI on the
+groups, a K sweep, a 3,000-resample bootstrap CI on the
 `RMSE(baseline) − RMSE(model)` delta) keeps **one**: role-conditioning
 predicts a lineup's **three-point-attempt share** ~3 % better than rung 3,
-95 % CI excluding 0 against **both** baseline and placebo, at K = 5 and K = 7,
-stable across K. The **points/100** role effect is marginal (CI just excludes
-0 at K = 5 only, K-fragile); **redundancy** does not survive (CI [−0.05,
-+0.05]). `RESEARCH_CONTRACT.md` §17.1 (a significant primary-unit improvement)
-remains **not met** — where lineups differ from the sum of their parts it is
-in how they shoot, not how much they score. Remaining: candidate idea #5
-(transaction backtest — needs a roster-change dataset), §45 player-lift, or the
-cycle-1 research report. Neural rungs 6–7 stay gated.
+95 % CI excluding 0 against the baseline across the K sweep (3–10). The
+**points/100** role effect is marginal (CI just excludes 0 at K = 5 only,
+K-fragile); **redundancy** does not survive (CI [−0.05, +0.05]).
+
+**Hardening (2026-09-01, `courtgraph confirm` wide-K + `transport-mechanistic`)
+downgrades `three_share`**: it beats the permuted-role placebo at only K = 5
+and K = 8 of 6; it does **not** transport to the held-out 2024-25 playoffs
+(Δ RMSE vs rung 3 ≈ 0, P(Δ>0) = 0.53); and its predicted shot-mix shift is
+uncorrelated with scoring (mediation r = 0.03). `pts_per_shot` / `rim_share`:
+null everywhere. So it is a small, real, *in-distribution* shot-distribution
+regularity, not a value effect. `RESEARCH_CONTRACT.md` §17.1 (a significant
+primary-unit improvement) remains **not met**. Remaining: recover the
+quarantined games (power), candidate idea #5 (transaction backtest), §45
+player-lift, or the cycle-1 research report. Neural rungs 6–7 stay gated.
 
 ## Governing document
 
