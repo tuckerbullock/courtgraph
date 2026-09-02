@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from courtgraph.chemistry.baseline_ladder import LadderComparison
     from courtgraph.chemistry.confirm import ConfirmationResult
     from courtgraph.chemistry.mechanistic import MechanisticComparison
+    from courtgraph.chemistry.phase_b_eval import PhaseBComparison
     from courtgraph.chemistry.player_lift_eval import PlayerLiftComparison
     from courtgraph.chemistry.redundancy_eval import RedundancyComparison
     from courtgraph.chemistry.role_eval import RoleComparison
@@ -360,6 +361,37 @@ def run_player_lift(
         raise ValueError(f"{stints_path}: only {len(table)} stints; need more")
     splits = make_all_splits(table)
     return evaluate_player_lift(table, splits, seed=seed, n_boot=n_boot)
+
+
+def run_phase_b(
+    stints_path: str | Path,
+    production_path: str | Path,
+    *,
+    assist_credit: float = 0.5,
+    seed: int = 0,
+    n_boot: int = 3000,
+) -> PhaseBComparison:
+    """Master plan §45 Phase B -- the per-player-production lift model, base-only
+    vs base + pooled lift vs a giver-shuffle placebo on a chronological holdout.
+    :mod:`courtgraph.chemistry.phase_b_eval`."""
+
+    from courtgraph.chemistry.phase_b import PhaseBConfig
+    from courtgraph.chemistry.phase_b_eval import evaluate_phase_b
+    from courtgraph.features.player_production import read_production
+
+    table = read_stints(stints_path)
+    production = read_production(production_path)
+    if len(production) < 5000:
+        raise ValueError(
+            f"{production_path}: only {len(production)} rows; need a larger table"
+        )
+    return evaluate_phase_b(
+        table,
+        production,
+        seed=seed,
+        n_boot=n_boot,
+        config=PhaseBConfig(assist_credit=assist_credit),
+    )
 
 
 def run_transaction_backtest(

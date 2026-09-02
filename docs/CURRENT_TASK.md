@@ -19,8 +19,18 @@ Different estimands, not "does γ_ij exist". Order: **D → B → C → E.**
   less. A player's lineup-value contribution transfers across a team change as
   cleanly as a non-mover's stays put. Best-powered test in the project.
   `INTERACTION_FINDINGS.md` "Transaction backtest".
-- **B → C → E block** — per-player production ingest → §45 Phase B lift model →
-  defensive side (`matchups` surface acquired). B is the ~1–2 week keystone.
+- **B + C — DONE** (`task/player-production`, PR pending). `courtgraph
+  player-production` (per-(player, stint) production, 99.2 % event match on real
+  data, validated vs known stars) + `courtgraph phase-b` (§45 Phase B: lift on
+  teammate *individual* production). **Null:** the lift model does not beat the
+  base-only model (points-only +0.01 [−0.12, +0.13]; +0.5·assists −0.08
+  [−0.26, +0.11]). Large in-sample lift coefficients that do not generalise.
+  **Closes the last open estimand** — a player's effect on teammates is not a
+  transferable quantity beyond additive talent, on any of the three
+  measurements (lineup value, roster changes, individual production).
+- **E — defensive side (NEXT)** — `matchups` surface (`boxscorematchupsv3`,
+  acquired) + defensive-lineup roles / redundancy / a defensive lift. The last
+  untested surface; almost certainly another null, run for completeness.
 
 ---
 

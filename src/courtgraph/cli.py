@@ -271,6 +271,31 @@ def build_parser() -> argparse.ArgumentParser:
     player_lift.add_argument("--seed", type=int, default=0, help="seed")
     player_lift.add_argument("--json", action="store_true", help="print result as JSON")
 
+    phase_b = subparsers.add_parser(
+        "phase-b",
+        help="master plan §45 Phase B: does a player's presence lift teammates' "
+        "individual per-possession production, beyond additive talent? base-only "
+        "vs base + pooled lift vs a giver-shuffle placebo",
+    )
+    phase_b.add_argument(
+        "--input", type=Path, required=True, help="multi-season stint file"
+    )
+    phase_b.add_argument(
+        "--production",
+        type=Path,
+        required=True,
+        help="player_production.jsonl from `courtgraph player-production`",
+    )
+    phase_b.add_argument(
+        "--assist-credit",
+        type=float,
+        default=0.5,
+        help="fraction of assisted-teammate points in the outcome (default 0.5)",
+    )
+    phase_b.add_argument("--boot", type=int, default=3000, help="bootstrap resamples")
+    phase_b.add_argument("--seed", type=int, default=0, help="seed")
+    phase_b.add_argument("--json", action="store_true", help="print result as JSON")
+
     txn = subparsers.add_parser(
         "transaction-backtest",
         help="contract T4: clean cross-season team switches as natural "
@@ -362,6 +387,32 @@ def build_parser() -> argparse.ArgumentParser:
         "are left null (default 200)",
     )
     player_features.add_argument(
+        "--json", action="store_true", help="also print a summary as JSON"
+    )
+
+    player_production = subparsers.add_parser(
+        "player-production",
+        help="attribute per-(player, stint) offensive production (made-FG "
+        "points, free throws, assist credit) from the snapshot -- the input to "
+        "§45 Phase B",
+    )
+    player_production.add_argument(
+        "--snapshot-dir", type=Path, required=True, help="snapshot directory"
+    )
+    player_production.add_argument(
+        "--stints", type=Path, required=True, help="stint file"
+    )
+    player_production.add_argument(
+        "--out", type=Path, required=True, help="write player_production.jsonl here"
+    )
+    player_production.add_argument(
+        "--assist-credit",
+        type=float,
+        default=0.5,
+        help="fraction of assisted-teammate points credited to the passer "
+        "(registered research choice; default 0.5)",
+    )
+    player_production.add_argument(
         "--json", action="store_true", help="also print a summary as JSON"
     )
 
@@ -1024,6 +1075,61 @@ def _cmd_player_lift(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_phase_b(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import run_phase_b
+
+    if args.boot < 1:
+        print("phase-b: --boot must be >= 1", file=stream)
+        return 2
+    try:
+        result = run_phase_b(
+            args.input,
+            args.production,
+            assist_credit=args.assist_credit,
+            seed=args.seed,
+            n_boot=args.boot,
+        )
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"phase-b: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True), file=stream)
+        return 0
+
+    vc = result.variance_components
+    db, dp = result.delta_vs_base, result.delta_vs_placebo
+    print(
+        f"phase-b (assist_credit={result.assist_credit}): "
+        f"tau_lift={vc['tau_lift']:.4f}  |lift| mean={vc['lift_abs_mean']:.3f} "
+        f"max={vc['lift_abs_max']:.3f}  sigma={vc['sigma']:.1f}",
+        file=stream,
+    )
+    print(
+        f"  {result.n_test_receivers} held-out receivers  "
+        f"base RMSE {result.base_macro_rmse:.3f}  lift {result.lift_macro_rmse:.3f}  "
+        f"placebo {result.placebo_macro_rmse:.3f}",
+        file=stream,
+    )
+    print(
+        f"  lift vs base:    {db['mean']:+.3f}  95% CI "
+        f"[{db['ci_lo']:+.3f}, {db['ci_hi']:+.3f}]  P(>0) {db['frac_gt_0']:.2f}",
+        file=stream,
+    )
+    print(
+        f"  lift vs placebo: {dp['mean']:+.3f}  95% CI "
+        f"[{dp['ci_lo']:+.3f}, {dp['ci_hi']:+.3f}]  P(>0) {dp['frac_gt_0']:.2f}",
+        file=stream,
+    )
+    print("  top |lift| players (id: lift ± sd):", file=stream)
+    for t in result.top_lifts[:10]:
+        print(
+            f"    {int(t['player_id']):>8}: {t['lift']:+.3f} ± {t['sd']:.3f}",
+            file=stream,
+        )
+    return 0
+
+
 def _cmd_transaction_backtest(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.chemistry.pipeline import run_transaction_backtest
 
@@ -1214,6 +1320,40 @@ def _cmd_player_features(args: argparse.Namespace, stream: TextIO) -> int:
             f"player-features: {len(profiles)} (player, season) profiles "
             f"({with_rates} above the {args.min_possessions}-possession floor) "
             f"across {len(seasons)} season(s) -> {args.out}",
+            file=stream,
+        )
+    return 0
+
+
+def _cmd_player_production(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.stints import read_stints
+    from courtgraph.features.player_production import (
+        ProductionConfig,
+        attribute_player_production,
+        write_production,
+    )
+    from courtgraph.ingest.snapshot import SnapshotError, load_snapshot
+
+    try:
+        snapshot = load_snapshot(args.snapshot_dir)
+        table = read_stints(args.stints)
+    except (SnapshotError, FileNotFoundError, OSError, ValueError) as exc:
+        print(f"player-production: {exc}", file=stream)
+        return 2
+
+    prod = attribute_player_production(
+        snapshot, table, config=ProductionConfig(assist_credit=args.assist_credit)
+    )
+    write_production(prod, args.out)
+    summary = prod.summary()
+    if args.json:
+        print(json.dumps({**summary, "out": str(args.out)}, indent=2), file=stream)
+    else:
+        print(
+            f"player-production: {summary['n_rows']} (player, stint) rows, "
+            f"event match rate {summary['match_rate']:.1%} "
+            f"({summary['off_roster_events_dropped']} off-roster events dropped) "
+            f"-> {args.out}",
             file=stream,
         )
     return 0
@@ -1441,8 +1581,10 @@ _COMMANDS = {
     "redundancy": _cmd_redundancy,
     "player-lift": _cmd_player_lift,
     "transaction-backtest": _cmd_transaction_backtest,
+    "phase-b": _cmd_phase_b,
     "mechanistic": _cmd_mechanistic,
     "player-features": _cmd_player_features,
+    "player-production": _cmd_player_production,
     "predict": _cmd_predict,
 }
 
