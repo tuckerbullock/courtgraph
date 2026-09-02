@@ -60,7 +60,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from courtgraph.ingest import SNAPSHOT_FORMAT
+from courtgraph.ingest import SNAPSHOT_FORMAT, SNAPSHOT_FORMATS
 
 INDEX_FILENAME = "courtgraph_snapshot.json"
 _REQUIRED_META_FIELDS = (
@@ -124,6 +124,7 @@ class SnapshotGame:
     away_shots_path: Path
     boxscore_path: Path | None
     file_hashes: dict[str, str]  # relative path -> sha256
+    data_nba_pbp_path: Path | None = None  # data.nba.com feed (v2 snapshots)
 
 
 @dataclass(frozen=True)
@@ -132,6 +133,7 @@ class Snapshot:
 
     root: Path
     games: tuple[SnapshotGame, ...]
+    snapshot_format: str = SNAPSHOT_FORMAT
     override_files: tuple[Path, ...] = field(default_factory=tuple)
     override_hashes: dict[str, str] = field(default_factory=dict)  # rel path -> sha256
     source_provenance: dict[str, Any] = field(default_factory=dict)  # provenance.json
@@ -225,9 +227,9 @@ def load_snapshot(snapshot_dir: str | Path) -> Snapshot:
         raise SnapshotError(f"{index_path}: invalid JSON ({exc})") from exc
 
     fmt = index.get("snapshot_format")
-    if fmt != SNAPSHOT_FORMAT:
+    if fmt not in SNAPSHOT_FORMATS:
         raise SnapshotError(
-            f"{index_path}: snapshot_format {fmt!r} != {SNAPSHOT_FORMAT!r}"
+            f"{index_path}: snapshot_format {fmt!r} not in {SNAPSHOT_FORMATS!r}"
         )
     raw_games = index.get("games")
     if not isinstance(raw_games, list) or not raw_games:
@@ -275,6 +277,19 @@ def load_snapshot(snapshot_dir: str | Path) -> Snapshot:
                     f"{required.relative_to(root)}"
                 )
 
+        # v2: optional data.nba.com feed. The path is snapshot-relative; a
+        # declared-but-missing file is a structural error (fail closed).
+        data_nba_rel = entry.get("data_nba_pbp")
+        data_nba_pbp: Path | None = None
+        if data_nba_rel:
+            candidate = (root / str(data_nba_rel)).resolve()
+            if not candidate.is_file() or root.resolve() not in candidate.parents:
+                raise SnapshotError(
+                    f"game {meta.game_id}: declared data_nba_pbp not found or "
+                    f"outside snapshot: {data_nba_rel!r}"
+                )
+            data_nba_pbp = candidate
+
         hashes = {
             str(index_path.relative_to(root)): sha256_file(index_path),
             str(pbp.relative_to(root)): sha256_file(pbp),
@@ -283,6 +298,8 @@ def load_snapshot(snapshot_dir: str | Path) -> Snapshot:
         }
         if boxscore.is_file():
             hashes[str(boxscore.relative_to(root))] = sha256_file(boxscore)
+        if data_nba_pbp is not None:
+            hashes[str(data_nba_pbp.relative_to(root))] = sha256_file(data_nba_pbp)
         hashes.update(override_hashes)
 
         games.append(
@@ -293,12 +310,14 @@ def load_snapshot(snapshot_dir: str | Path) -> Snapshot:
                 away_shots_path=away_shots,
                 boxscore_path=boxscore if boxscore.is_file() else None,
                 file_hashes=hashes,
+                data_nba_pbp_path=data_nba_pbp,
             )
         )
 
     return Snapshot(
         root=root,
         games=tuple(games),
+        snapshot_format=str(fmt),
         override_files=override_files,
         override_hashes=override_hashes,
         source_provenance=source_provenance,
@@ -320,6 +339,10 @@ def stage_working_copy(snapshot: Snapshot, work_dir: str | Path) -> Path:
     (work / "game_details").mkdir(parents=True, exist_ok=True)
     for game in snapshot.games:
         shutil.copy2(game.pbp_path, work / "pbp" / game.pbp_path.name)
+        if game.data_nba_pbp_path is not None:
+            shutil.copy2(
+                game.data_nba_pbp_path, work / "pbp" / game.data_nba_pbp_path.name
+            )
         shutil.copy2(
             game.home_shots_path, work / "game_details" / game.home_shots_path.name
         )

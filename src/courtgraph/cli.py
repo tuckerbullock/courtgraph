@@ -365,8 +365,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--archive-dir",
         type=Path,
         required=True,
-        help="directory holding the archive's nbastats*.csv / datanba*.csv / "
-        "shotdetail*.csv (one file per provider, or one per provider per season)",
+        action="append",
+        help="directory holding the archive's nbastats_*.csv / datanba_*.csv / "
+        "shotdetail_*.csv (one file per provider, or one per provider per "
+        "season). Repeatable -- pass several season-range dirs to build one "
+        "combined snapshot.",
     )
     shuf_selection = shuf.add_mutually_exclusive_group(required=True)
     shuf_selection.add_argument(

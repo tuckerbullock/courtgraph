@@ -70,7 +70,16 @@ class SnapshotStructureTests(unittest.TestCase):
         index.write_text(json.dumps(payload))
         with self.assertRaises(SnapshotError):
             load_snapshot(self.root)
-        self.assertEqual(SNAPSHOT_FORMAT, "stats_nba_pbpstats/v1")
+        self.assertEqual(SNAPSHOT_FORMAT, "stats_nba_pbpstats/v2")
+
+    def test_v1_snapshot_still_loads(self) -> None:
+        index = self.root / "courtgraph_snapshot.json"
+        payload = json.loads(index.read_text())
+        payload["snapshot_format"] = "stats_nba_pbpstats/v1"
+        index.write_text(json.dumps(payload))
+        snap = load_snapshot(self.root)
+        self.assertEqual(snap.snapshot_format, "stats_nba_pbpstats/v1")
+        self.assertTrue(all(g.data_nba_pbp_path is None for g in snap.games))
 
     def test_missing_pbp_file_is_a_snapshot_error(self) -> None:
         next(self.root.glob("pbp/stats_*.json")).unlink()

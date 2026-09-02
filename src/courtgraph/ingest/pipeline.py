@@ -222,6 +222,7 @@ def _ingest(
 
     manifest = AuditManifest(
         snapshot_root=str(snapshot_path.resolve()),
+        snapshot_format=snapshot.snapshot_format,
         parser={
             "tool": "pbpstats",
             "version": _pbpstats_version(),
@@ -243,36 +244,61 @@ def _ingest(
     for game in snapshot.games:
         meta = game.metadata
         idx = season_index[meta.season]
+        surface_flags: list[str] = []
         try:
             views = reconstruct_game(work_dir, meta.game_id)
         except (PossessionReconstructionError, IngestNetworkAttempt) as exc:
-            reason = (
+            primary_reason = (
                 "network_required"
                 if isinstance(exc, IngestNetworkAttempt)
                 else f"pbpstats_reconstruction_failed:{exc.cause_type}"
             )
-            exclusion = Exclusion(
-                game_id=meta.game_id, level="game", reason=reason, detail=str(exc)
-            )
-            quarantine_lines.append(exclusion.to_dict())
-            manifest.games.append(
-                _game_manifest(
-                    meta,
-                    idx,
-                    "quarantined",
-                    reason,
-                    0,
-                    [exclusion],
-                    0,
-                    {},
-                    {},
-                    [],
-                    game.file_hashes,
-                    snapshot.correction_set_id,
+            # Second surface: the data.nba.com feed (v2 snapshots). Its provider
+            # derives period starters from the pbp walk alone and has no
+            # event-order network path, so it recovers many games the
+            # playbyplayv2 surface cannot reconstruct offline.
+            views = None
+            if game.data_nba_pbp_path is not None:
+                try:
+                    views = reconstruct_game(
+                        work_dir, meta.game_id, provider="data_nba"
+                    )
+                    surface_flags.append("pbp_surface:data_nba")
+                except (PossessionReconstructionError, IngestNetworkAttempt) as exc2:
+                    fallback_reason = (
+                        "network_required"
+                        if isinstance(exc2, IngestNetworkAttempt)
+                        else f"pbpstats_reconstruction_failed:{exc2.cause_type}"
+                    )
+                    primary_reason = f"{primary_reason}; data_nba:{fallback_reason}"
+                    exc = exc2  # detail reflects the last attempt
+            if views is None:
+                exclusion = Exclusion(
+                    game_id=meta.game_id,
+                    level="game",
+                    reason=primary_reason,
+                    detail=str(exc),
                 )
-            )
-            continue
+                quarantine_lines.append(exclusion.to_dict())
+                manifest.games.append(
+                    _game_manifest(
+                        meta,
+                        idx,
+                        "quarantined",
+                        primary_reason,
+                        0,
+                        [exclusion],
+                        0,
+                        {},
+                        {},
+                        [],
+                        game.file_hashes,
+                        snapshot.correction_set_id,
+                    )
+                )
+                continue
 
+        assert views is not None  # the `views is None` branch always continues
         validation = validate_game(views, meta, policy)
         stints = (
             possessions_to_stints(validation.accepted, meta, policy, idx)
@@ -299,7 +325,7 @@ def _ingest(
                 len(validation.accepted),
                 validation.source_event_counts,
                 validation.reconciliation,
-                validation.flags,
+                [*validation.flags, *surface_flags],
                 game.file_hashes,
                 snapshot.correction_set_id,
                 stints_emitted=len(stints),

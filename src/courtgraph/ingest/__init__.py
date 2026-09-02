@@ -14,10 +14,14 @@ path never import this package, and this module never imports ``pbpstats`` or
 
 from __future__ import annotations
 
-# One documented snapshot layout for cycle 1 (see snapshot.py for the contract).
-SNAPSHOT_FORMAT = "stats_nba_pbpstats/v1"
+# The documented snapshot layouts (see snapshot.py for the contract). ``v2``
+# adds an optional per-game ``data_nba_pbp`` file (the data.nba.com feed, used as
+# a second possession-reconstruction surface); ``v1`` snapshots still load and
+# behave exactly as before (stats.nba.com surface only).
+SNAPSHOT_FORMAT = "stats_nba_pbpstats/v2"
+SNAPSHOT_FORMATS = ("stats_nba_pbpstats/v1", "stats_nba_pbpstats/v2")
 
 # Bump when the parser/policy contract changes in a way that alters emitted rows.
 INGEST_PIPELINE_VERSION = 1
 
-__all__ = ["SNAPSHOT_FORMAT", "INGEST_PIPELINE_VERSION"]
+__all__ = ["SNAPSHOT_FORMAT", "SNAPSHOT_FORMATS", "INGEST_PIPELINE_VERSION"]

@@ -1,16 +1,19 @@
-"""Build a ``stats_nba_pbpstats/v1`` snapshot from a local SRC-SHUFINSKIY archive.
+"""Build a ``stats_nba_pbpstats/v2`` snapshot from local SRC-SHUFINSKIY archives.
 
 ``shufinskiy/nba_data`` re-packages ``stats.nba.com`` / ``data.nba.com`` payloads
-as flat CSVs. ``DATA_SOURCES.md`` designates it the **local-dev-only** fallback
-when the live endpoints are unreachable (SRC-SHUFINSKIY; §8 pilot check 1). This
-module reconstructs, for the games in one archive (which may span several
-seasons -- every ``nbastats*.csv`` / ``datanba*.csv`` / ``shotdetail*.csv`` in
-the directory is read), exactly the files
+as flat CSVs. ``DATA_SOURCES.md`` designates it the **local-dev-only** bulk
+source (SRC-SHUFINSKIY; §8 pilot check 1). This module reconstructs, for the
+games across one or more archive directories (each may span several seasons --
+every ``nbastats_*.csv`` / ``datanba_*.csv`` / ``shotdetail_*.csv`` under each is
+read and concatenated), exactly the files
 :mod:`courtgraph.ingest.pipeline` consumes:
 
 * ``pbp/stats_<gid>.json``  <- ``nbastats_*.csv`` (playbyplayv2), **rows kept in
   the archive's order** -- ``EVENTNUM`` is not always monotonic and pbpstats
   fixes ordering itself.
+* ``pbp/data_<gid>.json``  <- ``datanba_*.csv`` (data.nba.com feed, ``oftid`` on
+  every event) -- the second possession-reconstruction surface (v2), used by
+  the pipeline when the playbyplayv2 surface needs a network call.
 * ``game_details/stats_{home,away}_shots_<gid>.json`` <- ``shotdetail_*.csv``
 * ``courtgraph_snapshot.json`` -- game date and rest days from the **validated
   ``GAME_DATE``** in ``shotdetail_*.csv`` (not the UTC event wall-clock); teams
@@ -40,6 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from courtgraph.ingest import SNAPSHOT_FORMAT
 from courtgraph.ingest._paths import (
     OutputPathError,
     assert_directory_ok,
@@ -50,16 +54,18 @@ from courtgraph.ingest._paths import (
     safe_target,
 )
 
-CONVERTER_VERSION = "cg-shufinskiy/3"
+CONVERTER_VERSION = "cg-shufinskiy/4"
 
 # Each provider's CSVs are matched by this glob in the archive directory. One
 # archive may hold several seasons (e.g. ``nbastats_2020.csv`` … ``_2024.csv``)
-# or a single playoffs file (``nbastats_po_2024.csv``); every match is read and
+# or a playoffs file (``nbastats_po_2024.csv``); every match is read and
 # concatenated -- NBA game ids are globally unique, so merging cannot collide.
+# The trailing ``_`` keeps ``nbastats_*`` from also matching ``nbastatsv3_*``
+# (a different surface: playbyplayv3, not consumed by this importer).
 _PROVIDER_GLOBS = {
-    "nbastats": "nbastats*.csv",
-    "datanba": "datanba*.csv",
-    "shotdetail": "shotdetail*.csv",
+    "nbastats": "nbastats_*.csv",
+    "datanba": "datanba_*.csv",
+    "shotdetail": "shotdetail_*.csv",
 }
 _SNAPSHOT_GITIGNORE_HEADER = (
     "# Written by `courtgraph snapshot-from-shufinskiy`. NBA-derived data\n"
@@ -181,22 +187,25 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def _provider_files(archive_dir: Path, provider: str) -> list[Path]:
-    """Every CSV for one provider in the archive, sorted by name. Raises if the
-    provider contributes nothing -- a partial archive is never silently ingested."""
+def _provider_files(archive_dirs: list[Path], provider: str) -> list[Path]:
+    """Every CSV for one provider across all archive dirs, sorted by name. Raises
+    if the provider contributes nothing anywhere -- a partial archive is never
+    silently ingested. NBA game ids are globally unique, so merging dirs (each a
+    season range) cannot collide."""
 
-    files = sorted(archive_dir.glob(_PROVIDER_GLOBS[provider]))
+    files = sorted(p for d in archive_dirs for p in d.glob(_PROVIDER_GLOBS[provider]))
     if not files:
+        glob = _PROVIDER_GLOBS[provider]
         raise ShufinskiyArchiveError(
-            f"no {provider} CSV in archive (expected {_PROVIDER_GLOBS[provider]})"
+            f"no {provider} CSV in archive dir(s) (expected {glob})"
         )
     return files
 
 
 def _read_provider(
-    archive_dir: Path, provider: str
+    archive_dirs: list[Path], provider: str
 ) -> tuple[list[dict[str, str]], list[Path]]:
-    files = _provider_files(archive_dir, provider)
+    files = _provider_files(archive_dirs, provider)
     rows: list[dict[str, str]] = []
     for path in files:
         rows.extend(_read_csv(path))
@@ -211,18 +220,33 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _pinned_commit(archive_dir: Path) -> str | None:
-    source_md = archive_dir / "SOURCE.md"
-    if not source_md.is_file():
+def _pinned_commit(archive_dirs: list[Path]) -> str | list[str] | None:
+    """The pinned commit recorded in the archive dirs' ``SOURCE.md`` files. One
+    string if they agree; the sorted list if they disagree (recorded verbatim so
+    a mixed pull is visible in provenance); ``None`` if none record one."""
+
+    found: set[str] = set()
+    for archive_dir in archive_dirs:
+        source_md = archive_dir / "SOURCE.md"
+        if not source_md.is_file():
+            continue
+        match = re.search(
+            r"[Pp]inned commit:\s*`?([0-9a-f]{40})`?", source_md.read_text()
+        )
+        if match:
+            found.add(match.group(1))
+    if not found:
         return None
-    match = re.search(r"[Pp]inned commit:\s*`?([0-9a-f]{40})`?", source_md.read_text())
-    return match.group(1) if match else None
+    return found.pop() if len(found) == 1 else sorted(found)
 
 
-def _archive_provenance(archive_dir: Path, consumed: list[Path]) -> dict[str, Any]:
+def _archive_provenance(
+    archive_dirs: list[Path], consumed: list[Path]
+) -> dict[str, Any]:
     return {
         "source": "SRC-SHUFINSKIY (shufinskiy/nba_data) — local, not redistributable",
-        "pinned_commit": _pinned_commit(archive_dir),
+        "pinned_commit": _pinned_commit(archive_dirs),
+        "archive_dirs": [str(d) for d in archive_dirs],
         "converter_version": CONVERTER_VERSION,
         "consumed_csv_sha256": {
             path.name: _sha256(path) for path in sorted(consumed, key=lambda p: p.name)
@@ -306,16 +330,20 @@ def _season_from_game_id(game_id: str) -> tuple[str, str]:
     return season, season_type
 
 
-def _load_official_totals(archive_dir: Path) -> dict[str, dict[str, Any]]:
+def _load_official_totals(archive_dirs: list[Path]) -> dict[str, dict[str, Any]]:
     """Optional operator-supplied NBA box-score totals, keyed by game id:
     ``{game_id: {"final_score": {team_id: pts}, "period_scores": {...},
-    "source": "..."}}``. Preferred over the data.nba.com game feed."""
+    "source": "..."}}``. Preferred over the data.nba.com game feed. Merged across
+    archive dirs; a later dir wins on a duplicate key."""
 
-    path = archive_dir / "official_totals.json"
-    if not path.is_file():
-        return {}
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return {_pad_game_id(str(k)): v for k, v in data.items()}
+    merged: dict[str, dict[str, Any]] = {}
+    for archive_dir in archive_dirs:
+        path = archive_dir / "official_totals.json"
+        if not path.is_file():
+            continue
+        data = json.loads(path.read_text(encoding="utf-8"))
+        merged.update({_pad_game_id(str(k)): v for k, v in data.items()})
+    return merged
 
 
 @dataclass(frozen=True)
@@ -328,11 +356,12 @@ class ShufinskiySnapshot:
 
 
 def build_snapshot(
-    archive_dir: str | Path,
+    archive_dir: str | Path | list[str | Path],
     game_ids: list[str] | None,
     out_dir: str | Path,
 ) -> ShufinskiySnapshot:
-    archive = Path(archive_dir)
+    raw_dirs = archive_dir if isinstance(archive_dir, list) else [archive_dir]
+    archives = [Path(d) for d in raw_dirs]
     out = Path(out_dir)
 
     # Destination safety, before creating or writing anything. Every generated
@@ -340,7 +369,8 @@ def build_snapshot(
     # after `safe_target` confirms no path component is a symlink and the target
     # resolves inside `out`, so a symlinked intermediate directory cannot
     # redirect a write into a source file.
-    reject_overlap(archive, out, in_label="--archive-dir", out_label="--out-dir")
+    for archive in archives:
+        reject_overlap(archive, out, in_label="--archive-dir", out_label="--out-dir")
     assert_directory_ok(out)
     if out.exists():
         assert_not_symlink(*(out / name for name in _GENERATED_SNAPSHOT_FILES))
@@ -350,12 +380,12 @@ def build_snapshot(
     safe_mkdir(out, out / "game_details")
     ensure_gitignore_block(out, ["*"], header=_SNAPSHOT_GITIGNORE_HEADER)
 
-    nbastats, nbastats_files = _read_provider(archive, "nbastats")
-    datanba, datanba_files = _read_provider(archive, "datanba")
-    shotdetail, shotdetail_files = _read_provider(archive, "shotdetail")
-    official_totals = _load_official_totals(archive)
+    nbastats, nbastats_files = _read_provider(archives, "nbastats")
+    datanba, datanba_files = _read_provider(archives, "datanba")
+    shotdetail, shotdetail_files = _read_provider(archives, "shotdetail")
+    official_totals = _load_official_totals(archives)
     provenance = _archive_provenance(
-        archive, [*nbastats_files, *datanba_files, *shotdetail_files]
+        archives, [*nbastats_files, *datanba_files, *shotdetail_files]
     )
 
     pbp_by_game: dict[str, list[dict[str, str]]] = defaultdict(list)
@@ -438,8 +468,11 @@ def build_snapshot(
         pbp_rows = pbp_by_game[gid]
         _write_pbp(out, gid, pbp_rows)
 
+        datanba_rows = datanba_by_game[gid]
+        _write_data_nba_pbp(out, gid, datanba_rows)
+
         home_id, away_id, feed_final, feed_periods = _derive_teams_and_scores(
-            datanba_by_game[gid]
+            datanba_rows
         )
         _write_shots(out, gid, shots_by_game.get(gid, []), home_id, away_id)
         _collect_names(names, pbp_rows)
@@ -452,6 +485,7 @@ def build_snapshot(
             "season_type": season_type,
             "home_team_id": home_id,
             "away_team_id": away_id,
+            "data_nba_pbp": f"pbp/data_{gid}.json",
         }
         gaps: list[str] = []
 
@@ -485,9 +519,7 @@ def build_snapshot(
         games_meta.append(entry)
 
     safe_target(out, out / "courtgraph_snapshot.json").write_text(
-        json.dumps(
-            {"snapshot_format": "stats_nba_pbpstats/v1", "games": games_meta}, indent=2
-        ),
+        json.dumps({"snapshot_format": SNAPSHOT_FORMAT, "games": games_meta}, indent=2),
         encoding="utf-8",
     )
     safe_target(out, out / "display_names.json").write_text(
@@ -553,6 +585,59 @@ def _write_pbp(out: Path, gid: str, rows: list[dict[str, str]]) -> None:
         ],
     }
     safe_target(out, out / "pbp" / f"stats_{gid}.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+
+
+# data.nba.com (v2015 mobile_teams) event keys; the datanba CSV columns map 1:1
+# to what pbpstats' ``DataEnhancedPbpItem`` reads (KEY_ATTR_MAPPER). ``oftid`` is
+# the offense team id on every event -- the reason this surface reconstructs
+# games the playbyplayv2 surface cannot without a network call.
+_DATANBA_EVENT_KEYS = (
+    "evt",
+    "cl",
+    "de",
+    "locX",
+    "locY",
+    "opt1",
+    "opt2",
+    "mtype",
+    "etype",
+    "opid",
+    "tid",
+    "pid",
+    "hs",
+    "vs",
+    "epid",
+    "oftid",
+    "ord",
+)
+
+
+def _write_data_nba_pbp(out: Path, gid: str, rows: list[dict[str, str]]) -> None:
+    """Emit ``pbp/data_<gid>.json`` in the nested ``g.pd[].pla[]`` shape
+    ``pbpstats``' ``data_nba`` provider reads, from the archive's datanba rows.
+    Rows are kept in archive order; ``pbpstats`` sorts by the ``ord`` field."""
+
+    by_period: dict[int, list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        try:
+            period = int(row["PERIOD"])
+        except (KeyError, ValueError):
+            continue
+        event = {
+            key: row[key] for key in _DATANBA_EVENT_KEYS if (row.get(key) or "") != ""
+        }
+        by_period[period].append(event)
+    payload = {
+        "g": {
+            "gid": gid,
+            "pd": [
+                {"p": period, "pla": by_period[period]} for period in sorted(by_period)
+            ],
+        }
+    }
+    safe_target(out, out / "pbp" / f"data_{gid}.json").write_text(
         json.dumps(payload), encoding="utf-8"
     )
 

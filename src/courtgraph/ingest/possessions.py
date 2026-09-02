@@ -136,18 +136,37 @@ def _score_dict(event: Any) -> dict[int, int]:
     return {int(team): int(points) for team, points in dict(event.score).items()}
 
 
-def reconstruct_game(work_dir: str | Path, game_id: str) -> list[PossessionView]:
+PBP_PROVIDERS = ("stats_nba", "data_nba")
+
+
+def reconstruct_game(
+    work_dir: str | Path, game_id: str, *, provider: str = "stats_nba"
+) -> list[PossessionView]:
     """Reconstruct one game's possessions from files in ``work_dir``.
+
+    ``provider`` selects the ``pbpstats`` ``data_provider``:
+
+    * ``"stats_nba"`` (default) reads ``pbp/stats_<game_id>.json``
+      (playbyplayv2) and can, on some games, fall back to a stats.nba.com
+      boxscore request for period starters or to data.nba.com for event order
+      -- both are caught by :func:`offline_guard` and surface as
+      :class:`IngestNetworkAttempt`;
+    * ``"data_nba"`` reads ``pbp/data_<game_id>.json`` (the data.nba.com feed,
+      ``oftid`` on every event) and derives period starters from the pbp walk
+      alone -- no boxscore, no event-order network path.
 
     :raises IngestNetworkAttempt: if reconstruction touches the network.
     :raises PossessionReconstructionError: for any other ``pbpstats`` failure.
     """
 
+    if provider not in PBP_PROVIDERS:
+        raise ValueError(f"provider must be one of {PBP_PROVIDERS}, got {provider!r}")
+
     from pbpstats.client import Client  # lazy: keeps `doctor` third-party-free
 
     settings = {
         "dir": str(work_dir),
-        "Possessions": {"source": "file", "data_provider": "stats_nba"},
+        "Possessions": {"source": "file", "data_provider": provider},
     }
     with offline_guard():
         try:
