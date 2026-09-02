@@ -1,16 +1,37 @@
 # Project Status
 
-Last updated: 2026-09-01 (three_share hardened — in-distribution shot-mix regularity only, no transport, no value)
+Last updated: 2026-09-02 (data acquisition — RS dataset doubled to ~537k stints via more seasons + a data.nba.com reconstruction surface)
 
 ## Current phase
 
-Real regular-season data is in. `courtgraph ingest` has been run once over a
-local, gitignored **five-season regular-season archive (2020-21 → 2024-25)**:
-5,998 games with all three provider inputs, **5,158 accepted → 266,518 stints,
-941,897 accepted possessions**, 30 teams, 985 players. 840 games (14%) are
-quarantined, the majority (`network_required`, 503) because `pbpstats` wants a
-box-score call the offline guard blocks. The 2024-25 playoffs archive is
-untouched and held out for the transport test (`DATA_SOURCES.md` §6).
+Real regular-season data is in and was **doubled** on 2026-09-02
+(`task/data-acquisition`):
+
+- **Earlier seasons pulled** from the same pinned SRC-SHUFINSKIY archive: RS
+  2016-17 → 2019-20 (+ playoffs 2016 → 2023; `cdnnba`/`nbastatsv3`/`matchups`
+  surfaces for 2020-25). `scripts/fetch_shufinskiy.py`, GitHub raw only.
+- **A second possession-reconstruction surface** (snapshot format `v2`): when
+  the playbyplayv2 (`stats_nba`) path needs a network call, the game is retried
+  with pbpstats' `data_nba` provider (period starters from the pbp walk, no
+  network). Purely additive — every stint that reconstructed before still does.
+
+Result, `courtgraph ingest` over the 8-season RS archive:
+
+| RS window | games in | accepted | quarantined | stints | recovered via `data_nba` |
+|---|---|---|---|---|---|
+| 2016-17 … 2019-20 | 4,746 | 4,556 | 190 (4.0 %) | 239,570 | 903 games |
+| 2020-21 … 2024-25 | 5,998 | 5,760 | 238 (4.0 %) | 297,404 | 620 games |
+| **total** | 10,744 | **10,316** | 428 | **536,974** | 1,523 games |
+
+Was: 5,158 accepted / 266,518 stints / 14 % quarantine (2020-24 only, v1). All
+266,518 prior stints are a strict subset of the new 297,404 for that window
+(regression-clean). Remaining quarantines are now mostly
+`score_reconciliation_failed` (162, data.nba.com running score ≠ official —
+fail-closed) and season-opener `missing_context` (143, → Task 3). The 2024-25
+playoffs archive is untouched and held out for the transport test
+(`DATA_SOURCES.md` §6). stats.nba.com is unreachable from this machine, so the
+new `courtgraph fetch-live` path (built, tested) is deferred to the user for
+2025-26 and the residual gaps.
 
 This is observational data only — **no model has been fit or evaluated on it
 yet**. The score check is within-NBA (stats reconstruction vs data.nba.com
@@ -42,13 +63,14 @@ feed), not an independent lineage. No demonstrated betting edge exists.
   scatter over the 5 players per stint instead of dense `(n × n_players)`
   matmuls — numerically identical to the old code (~1e-13), no new dependency.
   `courtgraph fit --evaluate` on 266k stints / 985 players runs in ~16 min.
-- **Real regular-season ingestion (2020-21 → 2024-25).** The SRC-SHUFINSKIY
-  importer, generalized to multi-season archives (glob file discovery; rest
-  days bounded to the same season; provenance hashes every consumed CSV;
-  `CONVERTER_VERSION` `cg-shufinskiy/3`), run end to end: acquire (local,
-  gitignored) → `snapshot-from-shufinskiy --all-games` → `ingest` → 266,518
-  stints in the versioned `courtgraph.chemistry.stints` format. Coverage,
-  per-season splits, and the quarantine breakdown are in `docs/CURRENT_TASK.md`.
+- **Real regular-season ingestion (2016-17 → 2024-25, 8 seasons).** The
+  SRC-SHUFINSKIY importer (multi-`--archive-dir`; a second `data_nba`
+  reconstruction surface; `CONVERTER_VERSION` `cg-shufinskiy/4`; snapshot
+  format `v2`), run end to end: `scripts/fetch_shufinskiy.py` (GitHub raw,
+  pinned commit) → `snapshot-from-shufinskiy --all-games` → `ingest` →
+  **536,974 stints** in the versioned `courtgraph.chemistry.stints` format.
+  Per-window totals and the quarantine breakdown are in the table above and in
+  `docs/CURRENT_TASK.md`.
 - Local browser app (`src/courtgraph/app/`, `courtgraph app`), with no new
   dependencies: explicit read-only ingest inputs, verified stint checksum and
   per-game exposure, game/team/player/sample filters, observed lineup rates,
@@ -166,15 +188,26 @@ feed), not an independent lineage. No demonstrated betting edge exists.
     `transport-mechanistic`): only `three_share` beats the baseline, and even
     that fails the placebo at most K, fails to transport to the playoffs, and
     is decoupled from scoring (mediation r = 0.03). See
-    `docs/INTERACTION_FINDINGS.md` "Confirmation → Hardening". Open next: §45
-    player-lift; §21 role features; recover quarantined games for power.
+    `docs/INTERACTION_FINDINGS.md` "Confirmation → Hardening".
+  - **Data doubled (2026-09-02):** RS dataset 266,518 → 536,974 stints (8
+    seasons; +1,523 games recovered by the `data_nba` surface). Model-ladder /
+    `confirm` re-run at the new scale is in progress — the power question the
+    hardening flagged. Open next: §45 player-lift; §21 role features.
 
 ## Not started
-- Recovering the 840 quarantined regular-season games (503 `network_required`,
-  170 pbpstats back-to-back exceptions, 93 score-reconciliation failures);
-  nullable `days_rest` (stint schema v3) for the 68 season-opener quarantines.
-- 2025-26 regular season (no play-by-play from this source yet) and
-  2016-17 → 2019-20 (contract-gated on data-quality checks).
+- Nullable `days_rest` (stint schema v3) for the season-opener `missing_context`
+  quarantines (143 across the 8 RS seasons). The `network_required` and
+  back-to-back quarantines are largely resolved by the `data_nba` surface; the
+  ~92 residual `network_required` and 162 `score_reconciliation_failed` need
+  a live fetch or a manual reconciliation-target review.
+- 2025-26 regular season — needs `courtgraph fetch-live` (stats.nba.com
+  unreachable here) or a `cdnnba`→pbp importer path; the `cdnnba`/`nbastatsv3`
+  archives for it are pulled and waiting.
+- Promotion of 2016-17 → 2019-20 to "binding" coverage — gated on the
+  data-quality checks (final-score reconciliation, player-seconds vs box score)
+  now that the era is ingested.
+- Re-running the model ladder / `confirm` on the doubled RS dataset (in
+  progress this task).
 - The contract's independent-parser gate and multi-game reconciliation gate; minute/lineup-minute reconciliation.
 - Model-ladder rungs 1 and 7; calibrated Bayesian uncertainty.
 - Transaction backtest (T4); the contract's full six-part evidence bar.
@@ -208,13 +241,13 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 223 unit tests, Ruff, mypy over 72 source
+The current implementation passes 230 unit tests, Ruff, mypy over 74 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
-to end (`snapshot-from-shufinskiy --all-games` → `ingest` → `courtgraph app
---ingest-dir`) on the local five-season regular-season archive: 6,000 games
-found, 5,998 with all three inputs, 5,158 accepted, 840 quarantined, two missing
-the feed. The full chemistry model was fit + evaluated on the 266k real stints
-in ~16 min after the sparse rework (was: never finished).
+to end on the 8-season regular-season archive (2016-17 → 2024-25): 10,744
+games with all three inputs, **10,316 accepted, 428 quarantined (4.0 %),
+536,974 stints**; 1,523 of those games were reconstructed via the second
+(`data_nba`) surface. The full chemistry model was fit + evaluated on the
+earlier 266k real stints in ~16 min after the sparse rework.
 
 On the default synthetic dataset (17k stints, deterministic) the low-rank model
 beats the additive baseline on macro held-out lineup value (vs the known truth)
