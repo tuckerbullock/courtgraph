@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from courtgraph.chemistry.baseline_ladder import LadderComparison
+    from courtgraph.chemistry.confirm import ConfirmationResult
     from courtgraph.chemistry.mechanistic import MechanisticComparison
     from courtgraph.chemistry.redundancy_eval import RedundancyComparison
     from courtgraph.chemistry.role_eval import RoleComparison
@@ -337,6 +338,42 @@ def run_redundancy(
     )
     splits = make_all_splits(table)
     return evaluate_redundancy(table, splits, clustering, seed=seed, n_boot=n_boot)
+
+
+def run_confirmation_file(
+    stints_path: str | Path,
+    profiles_path: str | Path,
+    snapshot_dir: str | Path,
+    *,
+    k_values: tuple[int, ...] = (3, 5, 7),
+    n_lineups: int = 120,
+    n_boot: int = 2000,
+) -> ConfirmationResult:
+    """Re-run the three interaction positives with a wider ``unseen_lineup``
+    holdout, a K sweep, and bootstrap CIs on the (baseline - model) delta.
+    See :mod:`courtgraph.chemistry.confirm`."""
+
+    from courtgraph.chemistry.confirm import run_confirmation
+    from courtgraph.features.player_season import read_player_profiles
+    from courtgraph.features.role_clusters import fit_role_clusters
+    from courtgraph.features.stint_shots import attribute_shots
+    from courtgraph.ingest.snapshot import load_snapshot
+
+    table = read_stints(stints_path)
+    if len(table) < 50:
+        raise ValueError(f"{stints_path}: only {len(table)} stints; need more")
+    profiles = read_player_profiles(profiles_path)
+    clustering_by_k = {
+        k: fit_role_clusters(profiles, n_clusters=k, seed=0) for k in k_values
+    }
+    attribution = attribute_shots(load_snapshot(snapshot_dir), table)
+    return run_confirmation(
+        table,
+        clustering_by_k,
+        attribution,
+        n_lineups=n_lineups,
+        n_boot=n_boot,
+    )
 
 
 @dataclass(frozen=True)
