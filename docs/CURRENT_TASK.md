@@ -4,81 +4,74 @@ Last updated: 2026-09-01
 
 ## Active
 
-**Task 1 of an autonomous work queue (user: "do all of those things ... just
-keep going"): harden the one confirmed interaction result, `three_share`.**
-Branch `task/harden-three-share`. PR #24. **Code + docs complete; result in.**
+**Task 2 of the autonomous work queue: maximal data acquisition + dual-surface
+ingest.** Branch `task/data-acquisition`.
 
-### Result (2026-09-01)
+Motivation: (a) the `three_share` hardening showed the interaction models are
+power-limited; (b) the ingest silently quarantines 8.4 % of games (840 / 5,998
+for RS 2020-24), a rate that would hit every new season. User direction: "just
+get as much new data as you can", "proceed, keep it local & research-scoped",
+"re-run the tests and models after".
 
-Hardening **downgrades `three_share`**. It is a small, real, *in-distribution*
-regularity in how role-redundant lineups distribute shot attempts — not a
-value effect, and it does not generalise to a new context.
+### Done
 
-- **a. Playoffs transport: NULL.** RS-trained role model, tested on the
-  held-out 2024-25 playoffs (65 recurring lineups): Δ RMSE vs rung 3 =
-  +0.00005 [−0.0011, +0.0012], P(Δ>0) = 0.53. `pts_per_shot` transport also
-  null.
-- **b. Mediation ≈ 0.** Over the 120 held-out unseen lineups, corr( role's
-  incremental `three_share` prediction , lineup scoring surprise vs rung 3 )
-  = **0.03**. Mean |Δ three_share| ≈ 0.3 pp. The shot-mix shift does not move
-  points.
-- **c. Other shot outcomes: null.** `pts_per_shot` and `rim_share` clear
-  neither baseline nor placebo on any holdout / K (`rim_share` role model is
-  slightly *worse* than additive).
-- **d. Wider K sweep (3–10).** vs **rung 3**: `three_share` role model beats
-  additive at K = 3,4,5,6,8 (CI excludes 0), marginal at K = 10 — robust. vs
-  **placebo**: CI excludes 0 at **K = 5 and K = 8 only** (K 3,4,6,10 span 0,
-  P 0.83–0.94). K-fragile against the placebo.
+- **`scripts/fetch_shufinskiy.py`** + `cycle1` plan — pulled from the pinned
+  shufinskiy commit (GitHub raw, sha256 TOFU, no NBA endpoint): RS 2016-17…
+  2019-20 (`datanba`/`nbastats`/`shotdetail`), playoffs 2016…2023, and the
+  `cdnnba`/`nbastatsv3`/`matchups` surfaces for 2020-25. New dirs under
+  `data/nba_snapshots/_shufinskiy_{rs_2016_2019,po_2016_2023,2025}/`, each with
+  a `SOURCE.md`. All gitignored.
+- **Snapshot format `v2`** (`v1` still loads): each game may carry
+  `pbp/data_<gid>.json` (the data.nba.com feed). `snapshot-from-shufinskiy`
+  emits it from the `datanba` CSVs and now takes several `--archive-dir` dirs.
+- **Dual-surface reconstruction** (`possessions.py` / `pipeline.py`): when the
+  playbyplayv2 surface needs a network call or raises, the game is retried with
+  pbpstats' `data_nba` provider (period starters from the pbp walk, no network
+  path). Games that already work are untouched; a `pbp_surface:data_nba`
+  manifest flag records the fallback.
+- **`courtgraph fetch-live`** + `live_fetch.py` — the optional §5.1 live path
+  (single worker, ≥1.5 s, backoff, hard-stop on 403/429, cache-and-freeze).
+  stdlib only, no new dep. **stats.nba.com is unreachable from this
+  environment** (times out even unsandboxed), so the live path is built and
+  tested (fake transport) but must be run by the user from a network where NBA
+  endpoints resolve — for full 2025-26 and the `InvalidNumberOfStarters` set.
 
-Verdict: strongest non-additivity the ladder has found, still well short of
-`RESEARCH_CONTRACT.md` §17.1. Documented in `docs/INTERACTION_FINDINGS.md`
-("Confirmation → Hardening"). Result JSONs gitignored under
-`data/nba_snapshots/rs_2020_2024/` (`chem_confirm_hardened.json`,
-`chem_tmech_three_share.json`, `chem_tmech_pts_per_shot.json`).
+230 tests pass; ruff / mypy / dep-free clean. 2 commits on the branch.
 
-### Next action for task 1
+### In progress
 
-Merge PR #24 (CI green, MERGEABLE). Then start task 2.
+Sequential re-ingest (memory-bounded — the combined 9-season build OOM'd):
+`rs_2016_2019/` then `rs_2020_2024_v2/` (v2 rebuild). Then concatenate RS
+stints and re-run `baselines` / `roles` / `confirm` at the new scale.
+
+### Next action
+
+1. Finish the re-ingest; record games/stints/quarantine-rate before-vs-after
+   and the `stats_nba`-vs-`data_nba` possession-count delta in this file.
+2. Regenerate `player_profiles.jsonl`; re-run `courtgraph baselines --rung4`,
+   `roles`, `confirm` on the enlarged RS stint set; update
+   `docs/INTERACTION_FINDINGS.md` and `docs/PROJECT_STATUS.md`. Preserve every
+   result (contract §17).
+3. Open the PR.
 
 ## The work queue (after this task, in order)
 
-2. **Recover the 840 quarantined RS games** (503 `network_required`, 170
-   pbpstats back-to-back, 93 score-reconciliation). ~15 % more data; the
-   confirmation showed the models are power-limited.
-3. **Nullable `days_rest` schema v3** — the 68 season-opener quarantines.
-4. **Per-player production ingest** — a pass emitting per-player on-court
-   offensive production from the play-by-play. Unlocks 5, 7, and the
-   defensive side.
-5. **§45 player-lift** — Phase A (pooled lift scalar on lineup value), then
-   Phase B (per-player production model + transaction-cohort test).
-6. **Defensive-side extension** — roles / redundancy / mechanistic on the
-   defensive lineup (all current work is offense-only).
-7. **Turnover-rate / assist-rate mechanistic outcomes** — with the full
-   `confirm` treatment.
-8. **Candidate #5 — transaction backtest (T4)** — real trades/injuries as
-   natural experiments. Needs a roster-change dataset (acquisition).
-9. **Model-ladder gaps** — rung 1 (EB-shrunk lineup mean) explicit; rung 5
-   low-rank re-run under the bootstrap-CI regime.
-10. **Contract deliverables** — the "strong" unseen-pair holdout (first-ever
-    partnership in the test window); seed-stability across more seeds; the
-    cycle-1 research report; the decision log.
-11. **More seasons** — 2016-17 → 2019-20 (data-quality gated); 2025-26 when
-    published.
-12. **Product (§44 / issue #8)** — lineup finder, roster optimizer, real-data
-    model serving in the app, the seven §44 appendix capabilities.
+3. **Nullable `days_rest` schema v3** — the season-opener `missing_context`
+   quarantines (68 for 2020-24, plus every 2016-17 and new-season opener).
+4. **Per-player production ingest** — unlocks §45 player-lift, defensive side.
+5. **§45 player-lift** — Phase A (pooled lift scalar) then Phase B.
+6. **Defensive-side extension** — roles / redundancy / mechanistic on defense;
+   `matchups` surface (now acquired) feeds this.
+7. **Turnover / assist mechanistic outcomes** — full `confirm` treatment.
+8. **Transaction backtest (T4)** — needs the live roster/transaction fetch
+   (`fetch-live`, blocked here) or `prosportstransactions`.
+9. **Model-ladder gaps** — rung 1 explicit; rung 5 re-run under bootstrap CI.
+10. **Contract deliverables** — strong unseen-pair holdout; seed stability;
+    cycle-1 report; decision log.
+11. **2025-26** — needs the live fetch or a `cdnnba`→pbp importer path.
+12. **Product (§44 / issue #8)**.
 
-Each item lands as its own focused branch + PR. Preserve every result
-whatever it is (contract §17). `ChemistryConfig` / `HierarchicalConfig` /
-`RoleInteractionConfig` / `RedundancyConfig` defaults unchanged unless a task
-explicitly changes them.
-
-## Next action
-
-Merge PR #24, then begin task 2 (recover the ~840 quarantined RS games) on a
-fresh branch. Quarantine scoping already done: `quarantine.jsonl` holds 79,135
-rows but 78,007 are per-possession `split_lineup_possession`; the per-game
-reasons are 503 `network_required`, 207 `unknown_team`, 171
-`pbpstats_reconstruction_failed`, 93 `score_reconciliation_failed`, 81
-`possession_alternation_failed`, 68 `missing_context`, 5 `ambiguous_scoring`.
-Confirm the per-game total against `manifest.json` (not `quarantine.jsonl`)
-first.
+Each item lands as its own focused branch + PR. `ChemistryConfig` /
+`HierarchicalConfig` / `RoleInteractionConfig` / `RedundancyConfig` defaults
+unchanged unless a task explicitly changes them. The 2024-25 playoff archive
+stays held out of training.

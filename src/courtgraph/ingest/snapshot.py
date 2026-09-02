@@ -278,12 +278,17 @@ def load_snapshot(snapshot_dir: str | Path) -> Snapshot:
                 )
 
         # v2: optional data.nba.com feed. The path is snapshot-relative; a
-        # declared-but-missing file is a structural error (fail closed).
+        # declared-but-missing file or one that escapes the snapshot is a
+        # structural error (fail closed).
         data_nba_rel = entry.get("data_nba_pbp")
         data_nba_pbp: Path | None = None
         if data_nba_rel:
-            candidate = (root / str(data_nba_rel)).resolve()
-            if not candidate.is_file() or root.resolve() not in candidate.parents:
+            candidate = root / str(data_nba_rel)
+            resolved_root = root.resolve()
+            if (
+                not candidate.is_file()
+                or resolved_root not in candidate.resolve().parents
+            ):
                 raise SnapshotError(
                     f"game {meta.game_id}: declared data_nba_pbp not found or "
                     f"outside snapshot: {data_nba_rel!r}"
