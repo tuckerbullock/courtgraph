@@ -612,21 +612,40 @@ _DATANBA_EVENT_KEYS = (
     "oftid",
     "ord",
 )
+# Everything but the clock string and the description is numeric in the real
+# data.nba.com JSON. pbpstats keys its event-class factory on ``int`` etype, so
+# the CSV strings must be coerced or every event falls back to the generic
+# class (and start-of-period handling raises AttributeError).
+_DATANBA_STRING_KEYS = frozenset({"cl", "de"})
+
+
+def _datanba_cell(key: str, value: str) -> Any:
+    if key in _DATANBA_STRING_KEYS:
+        return value
+    try:
+        return int(value)
+    except ValueError:
+        try:
+            return float(value)
+        except ValueError:
+            return value
 
 
 def _write_data_nba_pbp(out: Path, gid: str, rows: list[dict[str, str]]) -> None:
     """Emit ``pbp/data_<gid>.json`` in the nested ``g.pd[].pla[]`` shape
     ``pbpstats``' ``data_nba`` provider reads, from the archive's datanba rows.
-    Rows are kept in archive order; ``pbpstats`` sorts by the ``ord`` field."""
+    Rows are kept in archive order (the datanba CSV is already ``ord``-sorted)."""
 
-    by_period: dict[int, list[dict[str, str]]] = defaultdict(list)
+    by_period: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         try:
             period = int(row["PERIOD"])
         except (KeyError, ValueError):
             continue
         event = {
-            key: row[key] for key in _DATANBA_EVENT_KEYS if (row.get(key) or "") != ""
+            key: _datanba_cell(key, row[key])
+            for key in _DATANBA_EVENT_KEYS
+            if (row.get(key) or "") != ""
         }
         by_period[period].append(event)
     payload = {
