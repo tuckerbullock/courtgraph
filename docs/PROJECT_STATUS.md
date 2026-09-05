@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-05 (turnover/assist mechanistic outcomes — two more
 nulls; cycle-1 research report; product side — real-data rung-3 lineup
-predictor, CLI + app)
+predictor + A/B compare, CLI + app; model-ladder rungs 0 and 1)
 
 ## Current phase
 
@@ -41,6 +41,19 @@ feed), not an independent lineage. No demonstrated betting edge exists.
 
 ## Completed
 
+- **Model ladder rungs 0 and 1** (`src/courtgraph/chemistry/rung01.py`, now
+  in every `courtgraph baselines` run). Rung 0: context-only weighted least
+  squares. Rung 1: rung 0 plus an empirical-Bayes-shrunk per-exact-lineup
+  residual (0 for a lineup unseen in training). `RESEARCH_CONTRACT.md` §16
+  requires every rung 0-7 to exist; the ladder is now complete through rung
+  5. On 297k stints, rung 1 **beats rung 0** on the chronological holdout
+  (macro RMSE 2.30 vs 2.83 — direct lineup history is a strong predictor
+  when lineups recur) and is identical to rung 0 on the two structural
+  holdouts by construction (their held-out lineups are unseen). On
+  `unseen_lineup` both are far behind additive talent (8.25 vs rung 2's
+  4.94) — history is worth nothing when the five have never played together,
+  which is exactly why the structural holdouts, not the chronological one,
+  are the real test of roster-construction generalisation.
 - **Model ladder rung 4 — explicit teammate-pair interaction RAPM**
   (`src/courtgraph/chemistry/pair_interaction.py`, `courtgraph baselines
   --rung4`): the rung-3 EB model plus an explicit `γ_ij` term per admitted
@@ -261,7 +274,8 @@ feed), not an independent lineage. No demonstrated betting edge exists.
 - Re-running the model ladder / `confirm` on the doubled RS dataset (in
   progress this task).
 - The contract's independent-parser gate and multi-game reconciliation gate; minute/lineup-minute reconciliation.
-- Model-ladder rungs 1 and 7; calibrated Bayesian uncertainty.
+- Model-ladder rung 7 (rungs 0/1 now done, above); rung 5 re-run under
+  bootstrap CI; calibrated Bayesian uncertainty.
 - Mid-season-trade transaction cohort (the cross-season T4 backtest is done —
   null); the contract's full six-part evidence bar.
 - Real-NBA predictive lineup recommendations, dated complete-roster generation, and the broader product backlog. The local observational/synthetic app is implemented.
@@ -294,7 +308,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 268 unit tests, Ruff, mypy over 74 source
+The current implementation passes 271 unit tests, Ruff, mypy over 74 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end on the 8-season regular-season archive (2016-17 → 2024-25): 10,744
 games with all three inputs, **10,316 accepted, 428 quarantined (4.0 %),
