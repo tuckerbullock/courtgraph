@@ -698,6 +698,53 @@ def _predict_lineup_rung3_with_model(
     )
 
 
+def compare_lineups_rung3(
+    model_path: str | Path,
+    offense_a: list[int],
+    offense_b: list[int],
+    defense: list[int],
+    *,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Score two offensive fives against the same defense/context with a
+    fitted rung-3 model, and report the point difference. See
+    :data:`RUNG3_NOTE`."""
+
+    from courtgraph.chemistry import rung3_artifact
+
+    model, meta = rung3_artifact.load_model(model_path)
+    return _compare_lineups_rung3_with_model(
+        model, meta, offense_a, offense_b, defense, context
+    )
+
+
+def _compare_lineups_rung3_with_model(
+    model: Any,
+    meta: dict[str, Any],
+    offense_a: list[int],
+    offense_b: list[int],
+    defense: list[int],
+    context: dict[str, Any] | None,
+) -> dict[str, Any]:
+    a = _predict_lineup_rung3_with_model(model, meta, offense_a, defense, context)
+    b = _predict_lineup_rung3_with_model(model, meta, offense_b, defense, context)
+    return {
+        "a": a.as_dict(),
+        "b": b.as_dict(),
+        "delta": {
+            "talent": b.talent - a.talent,
+            "context_value": b.context_value - a.context_value,
+            "total": b.total - a.total,
+        },
+        "delta_note": (
+            "Point difference only. Rung 3's per-lineup interval is not a "
+            "calibrated interval on the A-vs-B difference (the two "
+            "predictions' posterior errors are correlated)."
+        ),
+        "note": RUNG3_NOTE,
+    }
+
+
 def _syn_config_dict(cfg: SyntheticConfig) -> dict[str, Any]:
     return {
         "seed": cfg.seed,

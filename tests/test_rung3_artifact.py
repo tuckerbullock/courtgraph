@@ -125,6 +125,27 @@ class Rung3ArtifactTests(unittest.TestCase):
                 [1006, 1007, 1008, 1009, 1010],
             )
 
+    def test_compare_lineups_rung3(self) -> None:
+        from courtgraph.chemistry import rung3_artifact
+        from courtgraph.chemistry.pipeline import compare_lineups_rung3
+
+        path = Path(self._dir.name) / "rung3_compare.json"
+        rung3_artifact.save_model(self.model, path)
+        result = compare_lineups_rung3(
+            path,
+            [1001, 1002, 1003, 1004, 1005],
+            [1001, 1002, 1003, 1004, 1011],
+            [1006, 1007, 1008, 1009, 1010],
+        )
+        self.assertAlmostEqual(
+            result["delta"]["total"],
+            result["b"]["total"] - result["a"]["total"],
+            places=9,
+        )
+        self.assertNotIn("interaction", result["a"])
+        self.assertNotIn("interaction", result)
+        self.assertIn("delta_note", result)
+
     def test_result_has_no_interaction_field(self) -> None:
         """Structural guarantee: rung 3 has no chemistry/interaction term, so
         the prediction result type must not expose one, even accidentally."""

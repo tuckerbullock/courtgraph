@@ -630,6 +630,34 @@ def build_parser() -> argparse.ArgumentParser:
     predict_rung3.add_argument(
         "--json", action="store_true", help="print result as JSON"
     )
+
+    compare_rung3 = subparsers.add_parser(
+        "compare-rung3",
+        help="score two offensive fives against the same defense/context with "
+        "a fitted rung-3 model and report the point difference",
+    )
+    compare_rung3.add_argument(
+        "--model", type=Path, required=True, help="rung-3 model artifact path"
+    )
+    compare_rung3.add_argument(
+        "--offense-a", required=True, help="lineup A: 5 comma-separated player ids"
+    )
+    compare_rung3.add_argument(
+        "--offense-b", required=True, help="lineup B: 5 comma-separated player ids"
+    )
+    compare_rung3.add_argument(
+        "--defense", required=True, help="shared opponent: 5 comma-separated player ids"
+    )
+    compare_rung3.add_argument(
+        "--context",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="override a context field (repeatable), e.g. --context playoff=1",
+    )
+    compare_rung3.add_argument(
+        "--json", action="store_true", help="print result as JSON"
+    )
     return parser
 
 
@@ -1718,6 +1746,46 @@ def _cmd_predict_rung3(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_compare_rung3(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import compare_lineups_rung3
+
+    try:
+        result = compare_lineups_rung3(
+            args.model,
+            _parse_ids(args.offense_a),
+            _parse_ids(args.offense_b),
+            _parse_ids(args.defense),
+            context=_parse_context(args.context),
+        )
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"compare-rung3: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True), file=stream)
+        return 0
+    a, b, d = result["a"], result["b"], result["delta"]
+    print(f"defense {a['defense']}", file=stream)
+    print(
+        f"  A {a['offense']}  total {a['total']:8.2f}   "
+        f"95% [{a['interval_95'][0]:+.2f}, {a['interval_95'][1]:+.2f}]",
+        file=stream,
+    )
+    print(
+        f"  B {b['offense']}  total {b['total']:8.2f}   "
+        f"95% [{b['interval_95'][0]:+.2f}, {b['interval_95'][1]:+.2f}]",
+        file=stream,
+    )
+    print(
+        f"  B - A: talent {d['talent']:+.2f}  context {d['context_value']:+.2f}  "
+        f"total {d['total']:+.2f}",
+        file=stream,
+    )
+    print(f"  {result['delta_note']}", file=stream)
+    print(f"  {result['note']}", file=stream)
+    return 0
+
+
 def _cmd_app(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.app.server import serve
 
@@ -1747,6 +1815,7 @@ _COMMANDS = {
     "predict": _cmd_predict,
     "fit-rung3": _cmd_fit_rung3,
     "predict-rung3": _cmd_predict_rung3,
+    "compare-rung3": _cmd_compare_rung3,
 }
 
 

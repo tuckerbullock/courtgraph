@@ -284,6 +284,43 @@ class ChemistryCommandTests(unittest.TestCase):
         payload = json.loads(pred_json.getvalue())
         self.assertNotIn("interaction", payload)
 
+    def test_compare_rung3_smoke(self) -> None:
+        out_model = Path(self._dir.name) / "rung3_cmp.json"
+        main(
+            [
+                "fit-rung3",
+                "--input",
+                str(self.demo.stints_path),
+                "--model-out",
+                str(out_model),
+            ],
+            output=StringIO(),
+        )
+        out = StringIO()
+        code = main(
+            [
+                "compare-rung3",
+                "--model",
+                str(out_model),
+                "--offense-a",
+                "1001,1002,1003,1004,1005",
+                "--offense-b",
+                "1001,1002,1003,1004,1011",
+                "--defense",
+                "1006,1007,1008,1009,1010",
+                "--json",
+            ],
+            output=out,
+        )
+        self.assertEqual(code, 0)
+        payload = json.loads(out.getvalue())
+        self.assertAlmostEqual(
+            payload["delta"]["total"],
+            payload["b"]["total"] - payload["a"]["total"],
+            places=9,
+        )
+        self.assertNotIn("interaction", payload)
+
     def test_predict_rung3_rejects_a_missing_model(self) -> None:
         code = main(
             [
