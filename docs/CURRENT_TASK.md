@@ -38,6 +38,16 @@ by chemistry surplus, league-wide lineup finder, real dated rosters,
 opponent counter-lineups — all remain backlog until a future estimand
 overturns the current null, or a roster data source is acquired.
 
+**Follow-up, done same session (`task/rung3-lineup-compare`, stacked on the
+predictor branch):** real-data **A/B lineup comparison** — `compare_lineups_rung3`
+in `pipeline.py`, `courtgraph compare-rung3`, `Observations.compare` +
+`POST /api/compare-real`, and a Lineup-B column in the app panel. Two
+offensive fives vs. the same defense/context, point difference reported (the
+A-vs-B *difference* is not given a calibrated interval — the two posteriors
+are correlated). Caught + fixed a duplicate-`id` bug (`compare-button`
+collided with the synthetic sandbox's button) during browser testing. 268
+tests.
+
 ## Also done this session — turnover/assist mechanistic outcomes
 
 `task/mechanistic-turnover-assist`. `docs/RESEARCH_REPORT.md` (the new cycle-1

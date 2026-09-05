@@ -65,31 +65,58 @@ function renderQuality() {
   const entries = [['Recorded source', real.source], ['Archive coverage', `${c.archive_games} games found; ${c.complete_games} complete inputs; ${c.attempted_games} attempted; ${c.accepted_games} accepted`], ['Data through', real.cutoff || 'No accepted dates'], ['Converter', real.converter], ['Ingest generated', real.created_utc], ['Parser', `${real.parser.tool || 'Unknown'} ${real.parser.version || ''}`], ['Source commit', real.source_commit], ['Verified stint SHA-256', real.checksum], ['Use', 'Local demonstration only. No redistribution. Participants are not complete dated rosters.']];
   $('provenance').innerHTML = entries.map(([key,value]) => `<dt>${esc(key)}</dt><dd>${esc(value)}</dd>`).join('');
 }
+function fillSlots(side, label, pool, offsetPick) {
+  const container = $(`predict-${side}-selects`);
+  container.innerHTML = Array.from({length:5}, (_,i) => `<div class="player-slot"><span aria-hidden="true">${String(i+1).padStart(2,'0')}</span><label><span class="slot-label">${label} player ${i+1}</span><select id="predict-${side}-${i}" required></select></label></div>`).join('');
+  for (let i=0;i<5;i++) { $(`predict-${side}-${i}`).replaceChildren(...pool.players.map(p => new Option(`${p.name} (${num(p.possessions)} poss.)`, p.id))); $(`predict-${side}-${i}`).selectedIndex = Math.min(i + offsetPick, pool.players.length - 1); }
+}
 async function loadTeamPlayers(side) {
   const team = $(`predict-${side}-team`).value;
-  const container = $(`predict-${side}-selects`);
-  if (!team) { container.innerHTML = ''; return; }
   $('predict-error').hidden = true;
+  if (!team) { $(`predict-${side}-selects`).innerHTML = ''; if (side === 'off') $('predict-altb-selects').innerHTML = ''; return; }
   try {
     const pool = await api(`/api/player-pool?team=${encodeURIComponent(team)}`);
-    const label = side === 'off' ? 'Offense' : 'Defense';
-    container.innerHTML = Array.from({length:5}, (_,i) => `<div class="player-slot"><span aria-hidden="true">${String(i+1).padStart(2,'0')}</span><label><span class="slot-label">${label} player ${i+1}</span><select id="predict-${side}-${i}" required></select></label></div>`).join('');
-    for (let i=0;i<5;i++) { $(`predict-${side}-${i}`).replaceChildren(...pool.players.map(p => new Option(`${p.name} (${num(p.possessions)} poss.)`, p.id))); $(`predict-${side}-${i}`).selectedIndex = Math.min(i, pool.players.length - 1); }
-  } catch (error) { container.innerHTML = ''; showError('predict-error', error); }
+    if (side === 'off') {
+      fillSlots('off', 'Lineup A', pool, 0);
+      // Lineup B defaults to a visibly different five (shifted by one)
+      fillSlots('altb', 'Lineup B', pool, 1);
+    } else {
+      fillSlots('def', 'Defense', pool, 0);
+    }
+  } catch (error) { $(`predict-${side}-selects`).innerHTML = ''; if (side === 'off') $('predict-altb-selects').innerHTML = ''; showError('predict-error', error); }
 }
 function predictSelected(side) { return Array.from({length:5}, (_,i) => Number($(`predict-${side}-${i}`)?.value)); }
-async function predictLineup() {
+function predictContext() { return {home: $('predict-home').checked, playoff: $('predict-playoff').checked, rest: Number($('predict-rest').value)}; }
+function unseenWarning(support) {
+  const u = [...support.unseen_offense_players, ...support.unseen_defense_players];
+  return u.length ? `<p class="sample-warning">Never observed in the training data — additive-only, no talent estimate: ${u.join(', ')}</p>` : '';
+}
+async function runPredict(fn, button, otherButton, work) {
   $('predict-error').hidden = true;
-  $('predict-button').disabled = true;
-  $('predict-button').textContent = 'Fitting rung 3 on first use — this can take a minute…';
-  try {
+  button.disabled = true; otherButton.disabled = true;
+  const label = button.textContent;
+  button.textContent = 'Fitting rung 3 on first use — this can take a minute…';
+  try { await work(); }
+  catch (error) { $('predict-results').replaceChildren(); showError('predict-error', error); }
+  finally { button.disabled = false; otherButton.disabled = false; button.textContent = label; }
+}
+async function predictLineup() {
+  await runPredict(predictLineup, $('predict-button'), $('predict-compare-button'), async () => {
     const offense = predictSelected('off'), defense = predictSelected('def');
     if (offense.some(Number.isNaN) || defense.some(Number.isNaN)) throw new Error('Choose an offense team and a defense team first.');
-    const result = await api('/api/predict-real', {offense, defense, home: $('predict-home').checked, playoff: $('predict-playoff').checked, rest: Number($('predict-rest').value)});
-    const unseenOff = result.support.unseen_offense_players, unseenDef = result.support.unseen_defense_players;
-    $('predict-results').innerHTML = `<div class="comparison-top"><div><span class="eyebrow">MODEL ESTIMATE / REAL DATA</span><h2>Additive prediction.</h2><p>Offensive points per 100 possessions. Not net rating.</p></div></div><div class="table-scroll"><table><thead><tr><th>Component</th><th>Value</th></tr></thead><tbody><tr><td>Talent (individual + baseline)</td><td class="number">${dec(result.talent)}</td></tr><tr><td>Context</td><td class="number">${dec(result.context_value)}</td></tr><tr class="total"><td>Total predicted value</td><td class="number">${dec(result.total)}</td></tr></tbody></table></div><div class="uncertainty"><strong>Calibrated predictive intervals:</strong> 80% [${signed(result.interval_80[0])}, ${signed(result.interval_80[1])}] &nbsp;·&nbsp; 95% [${signed(result.interval_95[0])}, ${signed(result.interval_95[1])}].<br>${esc(result.note)}</div>${(unseenOff.length || unseenDef.length) ? `<p class="sample-warning">Never observed in the training data — additive-only, no talent estimate: ${[...unseenOff,...unseenDef].join(', ')}</p>` : ''}<p class="footnote">Weakest offensive exposure in this lineup: ${num(result.support.min_offense_player_possessions)} possessions.</p>`;
-  } catch (error) { $('predict-results').replaceChildren(); showError('predict-error', error); }
-  finally { $('predict-button').disabled = false; $('predict-button').textContent = 'Predict lineup →'; }
+    const r = await api('/api/predict-real', {offense, defense, ...predictContext()});
+    $('predict-results').innerHTML = `<div class="comparison-top"><div><span class="eyebrow">MODEL ESTIMATE / REAL DATA</span><h2>Additive prediction.</h2><p>Offensive points per 100 possessions. Not net rating.</p></div></div><div class="table-scroll"><table><thead><tr><th>Component</th><th>Value</th></tr></thead><tbody><tr><td>Talent (individual + baseline)</td><td class="number">${dec(r.talent)}</td></tr><tr><td>Context</td><td class="number">${dec(r.context_value)}</td></tr><tr class="total"><td>Total predicted value</td><td class="number">${dec(r.total)}</td></tr></tbody></table></div><div class="uncertainty"><strong>Calibrated predictive intervals:</strong> 80% [${signed(r.interval_80[0])}, ${signed(r.interval_80[1])}] &nbsp;·&nbsp; 95% [${signed(r.interval_95[0])}, ${signed(r.interval_95[1])}].<br>${esc(r.note)}</div>${unseenWarning(r.support)}<p class="footnote">Weakest offensive exposure in this lineup: ${num(r.support.min_offense_player_possessions)} possessions.</p>`;
+  });
+}
+async function compareLineups() {
+  await runPredict(compareLineups, $('predict-compare-button'), $('predict-button'), async () => {
+    const offense = predictSelected('off'), alternative = predictSelected('altb'), defense = predictSelected('def');
+    if (offense.some(Number.isNaN) || alternative.some(Number.isNaN) || defense.some(Number.isNaN)) throw new Error('Fill Lineup A, Lineup B, and the opponent.');
+    const r = await api('/api/compare-real', {offense, alternative, defense, ...predictContext()});
+    const a = r.a, b = r.b, d = r.delta;
+    const better = key => Math.abs(d[key]) < 0.05 ? 'about equal' : (d[key] > 0 ? 'Lineup B' : 'Lineup A');
+    $('predict-results').innerHTML = `<div class="comparison-top"><div><span class="eyebrow">MODEL ESTIMATE / REAL DATA</span><h2>The difference in your five.</h2><p>Offensive points per 100 possessions, same opponent and context. Not net rating.</p></div><div class="delta-pill">B − A &nbsp; <strong>${signed(d.total)}</strong> / 100</div></div><div class="table-scroll"><table><thead><tr><th>Component</th><th>Lineup A</th><th>Lineup B</th><th>B − A</th></tr></thead><tbody><tr><td>Talent</td><td class="number">${dec(a.talent)}</td><td class="number">${dec(b.talent)}</td><td class="number">${signed(d.talent)}</td></tr><tr><td>Context</td><td class="number">${dec(a.context_value)}</td><td class="number">${dec(b.context_value)}</td><td class="number">${signed(d.context_value)}</td></tr><tr class="total"><td>Total</td><td class="number">${dec(a.total)}</td><td class="number">${dec(b.total)}</td><td class="number">${signed(d.total)}</td></tr></tbody></table></div><div class="result-notes"><div><h3>Higher predicted offensive value</h3><p><strong>${better('total')}</strong> — neither is a validated recommendation.</p></div><div><h3>Per-lineup 95% intervals</h3><p>A [${signed(a.interval_95[0])}, ${signed(a.interval_95[1])}]<br>B [${signed(b.interval_95[0])}, ${signed(b.interval_95[1])}]</p></div></div><div class="uncertainty">${esc(r.delta_note)}<br>${esc(r.note)}</div>${unseenWarning(a.support)}${unseenWarning(b.support)}`;
+  });
 }
 function buildSelectors() {
   for (const [key,title] of [['offense','Lineup A'],['alternative','Lineup B'],['defense','Opponent']]) {
@@ -146,6 +173,7 @@ $('reset-lineups').addEventListener('click', resetLineups);
 $('predict-off-team').addEventListener('change', () => loadTeamPlayers('off'));
 $('predict-def-team').addEventListener('change', () => loadTeamPlayers('def'));
 $('predict-button').addEventListener('click', predictLineup);
+$('predict-compare-button').addEventListener('click', compareLineups);
 async function start() {
   try {
     state = await api('/api/state'); buildSelectors();

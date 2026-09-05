@@ -143,7 +143,11 @@ def make_server(
         def do_POST(self) -> None:
             if not self._trusted():
                 return
-            if self.path not in ("/api/compare", "/api/predict-real"):
+            if self.path not in (
+                "/api/compare",
+                "/api/predict-real",
+                "/api/compare-real",
+            ):
                 self._json(404, {"error": "Not found"})
                 return
             if (
@@ -161,10 +165,12 @@ def make_server(
                     raise ValueError("Request body must be a JSON object")
                 if self.path == "/api/compare":
                     self._json(200, sandbox.compare(payload))
-                else:
-                    if observations is None:
-                        raise ValueError("No real ingest directory is loaded")
+                elif observations is None:
+                    raise ValueError("No real ingest directory is loaded")
+                elif self.path == "/api/predict-real":
                     self._json(200, observations.predict(payload))
+                else:
+                    self._json(200, observations.compare(payload))
             except (ValueError, UnicodeError) as exc:
                 self._json(400, {"error": str(exc)})
 

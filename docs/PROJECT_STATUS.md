@@ -238,9 +238,13 @@ feed), not an independent lineage. No demonstrated betting edge exists.
     `/api/player-pool` and `/api/predict-real` endpoints, a new frontend
     panel) so it's something a user can touch, not just a CLI artifact.
     Issue #8's "chemistry surplus" ranking stays explicitly unbuildable —
-    chemistry isn't a supported predictive effect. Next: another item from
-    the work queue in `docs/CURRENT_TASK.md`, or more of issue #8 that
-    doesn't depend on chemistry (real dated rosters, league-wide search).
+    chemistry isn't a supported predictive effect. A follow-up
+    (`task/rung3-lineup-compare`) adds real-data **A/B lineup comparison**
+    (`courtgraph compare-rung3`, `/api/compare-real`, a Lineup-B column in the
+    app panel) — two fives vs. the same defense, point difference only.
+    Next: another item from the work queue in `docs/CURRENT_TASK.md`, or more
+    of issue #8 that doesn't depend on chemistry (real dated rosters,
+    league-wide search).
 
 ## Not started
 - Nullable `days_rest` (stint schema v3) for the season-opener `missing_context`
@@ -290,7 +294,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 265 unit tests, Ruff, mypy over 74 source
+The current implementation passes 268 unit tests, Ruff, mypy over 74 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end on the 8-season regular-season archive (2016-17 → 2024-25): 10,744
 games with all three inputs, **10,316 accepted, 428 quarantined (4.0 %),

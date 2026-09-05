@@ -343,3 +343,38 @@ class Observations:
             model, meta, offense, defense, context
         )
         return result.as_dict()
+
+    def compare(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Score two offensive fives against the same defense/context with
+        rung 3 and report the point difference. Same honesty constraints as
+        :meth:`predict` -- no chemistry/interaction claim, and the per-lineup
+        interval is not a calibrated interval on the A-vs-B difference."""
+
+        allowed = {"offense", "alternative", "defense", "home", "playoff", "rest"}
+        if set(payload) - allowed:
+            raise ValueError("Unknown comparison field")
+        offense = self._lineup_ids(payload.get("offense"), "offense")
+        alternative = self._lineup_ids(payload.get("alternative"), "alternative")
+        defense = self._lineup_ids(payload.get("defense"), "defense")
+        home, playoff, rest = (
+            payload.get("home", True),
+            payload.get("playoff", False),
+            payload.get("rest", 1),
+        )
+        if (
+            type(home) is not bool
+            or type(playoff) is not bool
+            or type(rest) is not int
+            or not 0 <= rest <= 7
+        ):
+            raise ValueError(
+                "Invalid context: home/playoff must be booleans and rest 0-7 days"
+            )
+        context = {"home_offense": home, "playoff": playoff, "days_rest_offense": rest}
+
+        from courtgraph.chemistry.pipeline import _compare_lineups_rung3_with_model
+
+        model, meta = self._ensure_rung3()
+        return _compare_lineups_rung3_with_model(
+            model, meta, offense, alternative, defense, context
+        )

@@ -498,6 +498,39 @@ class LocalHTTPTests(unittest.TestCase):
             self.request("/api/predict-real", method="POST", body="{}")[0], 415
         )
 
+    def test_compare_real_endpoint(self) -> None:
+        headers = {"Content-Type": "application/json", "X-CourtGraph-Request": "local"}
+        payload = {
+            "offense": [1, 2, 3, 4, 5],
+            "alternative": [1, 2, 3, 4, 5],
+            "defense": [6, 7, 8, 9, 10],
+        }
+        status, _headers, body = self.request(
+            "/api/compare-real",
+            method="POST",
+            body=json.dumps(payload),
+            headers=headers,
+        )
+        self.assertEqual(status, 200)
+        result = json.loads(body)
+        self.assertIn("delta", result)
+        self.assertNotIn("interaction", result)
+        self.assertAlmostEqual(
+            result["delta"]["total"],
+            result["b"]["total"] - result["a"]["total"],
+            places=9,
+        )
+        bad = {"offense": [1, 2, 3, 4, 5], "defense": [6, 7, 8, 9, 10]}
+        self.assertEqual(
+            self.request(
+                "/api/compare-real",
+                method="POST",
+                body=json.dumps(bad),
+                headers=headers,
+            )[0],
+            400,
+        )
+
     def test_bad_filters_fail_and_empty_results_are_valid(self) -> None:
         for query in (
             "minimum=no",

@@ -163,7 +163,15 @@ field anywhere in the result**:
 uv run courtgraph fit-rung3 --input ingest_out/stints.jsonl --model-out rung3.json
 uv run courtgraph predict-rung3 --model rung3.json \
     --offense 1001,1002,1003,1004,1005 --defense 1006,1007,1008,1009,1010
+# score two offensive fives against the same defense and report the point difference
+uv run courtgraph compare-rung3 --model rung3.json \
+    --offense-a 1001,1002,1003,1004,1005 --offense-b 1001,1002,1003,1004,1011 \
+    --defense 1006,1007,1008,1009,1010
 ```
+
+The per-lineup interval is calibrated; the A-vs-B *difference* is reported as
+a point estimate only (the two predictions' posterior errors are
+correlated).
 
 ## Local browser app (`courtgraph app`)
 
@@ -224,8 +232,9 @@ team and a defense team, pick five players each from the players observed on
 that team in the loaded window (explicitly labeled as inferred exposure, not
 an official roster), and get the same rung-3 additive prediction
 `predict-rung3` produces — fit once, lazily, on first use, and cached for the
-life of the server process. No chemistry/interaction claim anywhere in the
-result.
+life of the server process. It also fills a second five (Lineup B) from the
+same team so you can compare A vs B against a shared opponent. No
+chemistry/interaction claim anywhere in the result.
 
 The server binds only to `127.0.0.1`; `--port` defaults to 8765 (use another port
 if occupied). It serves only its bundled assets and these explicitly loaded
