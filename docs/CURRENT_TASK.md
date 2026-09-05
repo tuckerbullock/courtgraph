@@ -1,8 +1,44 @@
 # Current Task
 
-Last updated: 2026-09-01
+Last updated: 2026-09-05
 
-## Active — the "could still flip it" arc (user: "yesss all of these")
+## Active — turnover/assist mechanistic outcomes — DONE
+
+`task/mechanistic-turnover-assist`. `docs/RESEARCH_REPORT.md` (the new cycle-1
+capstone report, written 2026-09-04) and work-queue item 7 both named this as
+the natural next step: extend the mechanistic-outcome ladder
+(`pts_per_shot`/`rim_share`/`three_share`) with the two remaining candidates,
+**turnover rate** (turnovers per offensive possession) and **assist rate**
+(share of made shots assisted), reusing the same role-conditioned / placebo /
+K-sweep / bootstrap-CI machinery `three_share` was hardened with.
+
+- New attribution module `src/courtgraph/features/stint_events.py` — the same
+  time-window join `stint_shots.py` uses for shot-chart shots, applied to
+  `playbyplayv2` turnover/made-shot/assist events instead. 98.7 % event match
+  rate on the 297k (2020-24) dataset.
+- `mechanistic.py` / `confirm.py` / the CLI generalized to accept either
+  attribution family per outcome; the three existing outcomes' numbers are
+  byte-for-byte unchanged (regression-checked).
+- Caught and fixed a real methodological trap before trusting any number:
+  the shared `--min-fga` exposure filter defaults to 3 (tuned for FGA), but
+  median offensive possessions per stint is *also* 3 — silently dropping 46 %
+  of stints on the first pass. Fixed with `--min-fga 1` for the two new
+  outcomes and documented in the CLI help text.
+- **Both null** under the full K-sweep {3,4,5,6,8,10} + 3,000-resample
+  bootstrap CI on the 120-group `unseen_lineup` holdout and the 42-group
+  `unseen_pair` holdout: turnover_rate beats the placebo at only 1 of 6 K
+  values (exactly chance-level for six comparisons); assist_rate never beats
+  the placebo at any K. Neither shows `three_share`'s signature of beating
+  the placebo across multiple K values and every holdout. Full numbers in
+  `docs/INTERACTION_FINDINGS.md` → "Turnover rate & assist rate".
+- 248 → 253 tests (5 new), ruff/mypy/dependency-free path clean. 3 commits
+  on the branch (`stint_events.py`, the wiring, docs).
+
+This closes the mechanistic-outcome ladder as scoped: one small established
+non-additivity (`three_share`), four clean nulls. Next: pick between the
+product side (§44 / issue #8) or another item from the work queue below.
+
+## Completed — the "could still flip it" arc (user: "yesss all of these")
 
 Different estimands, not "does γ_ij exist". Order: **D → B → C → E.**
 
@@ -133,20 +169,22 @@ Full write-up in `docs/INTERACTION_FINDINGS.md` → "At 2× the data".
 (needs a network where stats.nba.com resolves): `courtgraph fetch-live` for
 2025-26 and the ~92 residual `network_required` games.
 
-## The work queue (after this task, in order)
+## The work queue (remaining, in order)
+
+Items 4 (per-player production), 5 (§45 player-lift), 7 (turnover/assist
+mechanistic), and 8 (transaction backtest, via the stint-derived cross-season
+cohort rather than a live fetch) are **done** — see "Completed" above and
+`docs/INTERACTION_FINDINGS.md`. The cycle-1 report piece of item 10 is also
+**done** (`docs/RESEARCH_REPORT.md`, 2026-09-04). Remaining:
 
 3. **Nullable `days_rest` schema v3** — the season-opener `missing_context`
    quarantines (68 for 2020-24, plus every 2016-17 and new-season opener).
-4. **Per-player production ingest** — unlocks §45 player-lift, defensive side.
-5. **§45 player-lift** — Phase A (pooled lift scalar) then Phase B.
-6. **Defensive-side extension** — roles / redundancy / mechanistic on defense;
-   `matchups` surface (now acquired) feeds this.
-7. **Turnover / assist mechanistic outcomes** — full `confirm` treatment.
-8. **Transaction backtest (T4)** — needs the live roster/transaction fetch
-   (`fetch-live`, blocked here) or `prosportstransactions`.
+6. **Defensive-side extension** — roles / redundancy / mechanistic on defense
+   (the pooled defensive lift is done and null); `matchups` surface (now
+   acquired) feeds this.
 9. **Model-ladder gaps** — rung 1 explicit; rung 5 re-run under bootstrap CI.
-10. **Contract deliverables** — strong unseen-pair holdout; seed stability;
-    cycle-1 report; decision log.
+10. **Remaining contract deliverables** — strong unseen-pair holdout; seed
+    stability; decision log.
 11. **2025-26** — needs the live fetch or a `cdnnba`→pbp importer path.
 12. **Product (§44 / issue #8)**.
 

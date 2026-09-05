@@ -48,12 +48,19 @@ widened to 120 groups, a K sweep, and a 3,000-resample bootstrap CI on the
 - **redundancy** — the held-out edge does not survive (CI [−0.05, +0.06]). The
   in-sample "all six concentration coefficients negative" stays a descriptive
   observation.
+- **turnover rate & assist rate** (2026-09-05) — both null under the same
+  K-sweep / placebo / bootstrap treatment; neither shows `three_share`'s
+  pattern of beating the placebo across multiple K values. See "Turnover rate
+  & assist rate" below.
 
 So: where lineups differ from the sum of their parts, it is in **how they
-shoot**, not **how much they score**. Lineup value in points per 100 is not
-improved by any interaction parameterisation at a level that survives proper
-power. `RESEARCH_CONTRACT.md` §17.1 remains **not met**. See "Mechanistic
-outcomes" and "Confirmation" below.
+shoot**, not **how much they score** — and even within "how they shoot,"
+`three_share` is the only outcome (of five tried: `pts_per_shot`,
+`rim_share`, `three_share`, `turnover_rate`, `assist_rate`) that clears a
+properly-powered bar. Lineup value in points per 100 is not improved by any
+interaction parameterisation at a level that survives proper power.
+`RESEARCH_CONTRACT.md` §17.1 remains **not met**. See "Mechanistic outcomes",
+"Confirmation", and "Turnover rate & assist rate" below.
 
 **Every estimand for "a player's effect on teammates" has now been tested and
 every one is null** (2026-09-02): symmetric pair interaction (rungs 4–5),
@@ -342,6 +349,53 @@ negative**:
 So the doubled dataset confirms the hardened verdict and removes the last
 marginal points/100 signal. `RESEARCH_CONTRACT.md` §17.1 remains **not met**.
 
+## Turnover rate & assist rate — two more mechanistic nulls (2026-09-05)
+
+`three_share` is the one non-additivity to survive hardening; the natural
+next step is to run the same role-conditioned / placebo / K-sweep / bootstrap
+machinery on the two other ball-security mechanistic outcomes named in the
+work queue: **turnover rate** (turnovers per offensive possession) and
+**assist rate** (share of made shots that were assisted). Both are new
+stint-level attributions (`courtgraph.features.stint_events`, a time-window
+join of `playbyplayv2` turnover/assist events onto stints, the same technique
+`stint_shots.py` uses for shot-chart shots) — 98.7 % event match rate on the
+297k (2020-24) dataset, in line with the 99.98 % shot-match / 99.2 %
+production-match rates already established for the other attributions.
+
+**A methodological note worth keeping:** the `--min-fga` exposure filter
+defaults to 3, tuned for field-goal attempts. Median **offensive possessions
+per stint is also 3** — reusing that default against `turnover_rate`'s
+possession-count denominator silently dropped 46 % of stints on the first
+pass. Fixed by passing `--min-fga 1` for the two new outcomes (keeps every
+stint with any exposure) and documented in the CLI help text
+(`src/courtgraph/cli.py`) so it isn't re-discovered the hard way next time.
+
+Properly-powered confirmation (`courtgraph confirm --k 3,4,5,6,8,10
+--outcomes turnover_rate,assist_rate --min-fga 1 --lineups 120 --boot 3000`,
+297k stints, `RMSE(baseline) − RMSE(model)`, 95 % bootstrap CI):
+
+| outcome | holdout | K values with CI excluding 0 vs rung 3 | vs permuted-role placebo |
+|---|---|---|---|
+| `turnover_rate` | unseen_lineup (120 groups) | K = 6 only (of 6) | K = 6 only |
+| `turnover_rate` | unseen_pair (42 groups) | none | none |
+| `assist_rate` | unseen_lineup (120 groups) | K = 4 only (of 6) | **none** |
+| `assist_rate` | unseen_pair (42 groups) | none | none |
+
+**Both are null.** A single K value out of six crossing zero on one holdout
+is exactly what six independent tests at a nominal 95 % threshold would
+produce by chance (`three_share`, for comparison, crossed zero at 5 of 6 K
+against rung 3 and 2 of 6 against the placebo — a much stronger pattern).
+`assist_rate` never beats the permuted-role placebo at any K on either
+holdout. Neither outcome shows the "wins on every holdout including
+chronological" signature that made `three_share` worth hardening in the
+first place. Mediation was not computed for either (nothing to mediate — no
+held-out edge survived to explain).
+
+This closes the mechanistic-outcome ladder as originally scoped
+(`pts_per_shot`, `rim_share`, `three_share`, `turnover_rate`, `assist_rate`):
+one small, real, in-distribution, value-neutral non-additivity in shot
+selection, and four clean nulls everywhere else tried.
+
 ## What this establishes — and what it does not
 
 **Supported:**
@@ -532,6 +586,20 @@ courtgraph transport-mechanistic \
   --test-snapshot  data/nba_snapshots/all_2025_playoffs/snap \
   --profiles data/nba_snapshots/rs_2020_2024/player_profiles.jsonl \
   --outcome three_share --clusters 5 --boot 3000 --json
+
+# turnover_rate / assist_rate -- note --min-fga 1, not the shot-outcome
+# default of 3 (median offensive possessions per stint is also 3)
+courtgraph mechanistic \
+  --input data/nba_snapshots/rs_2020_2024_v2/out/stints.jsonl \
+  --snapshot-dir data/nba_snapshots/rs_2020_2024_v2/snap \
+  --profiles data/nba_snapshots/rs_2020_2024_v2/player_profiles.jsonl \
+  --outcome turnover_rate --min-fga 1 --clusters 5 --bootstrap 100 --json
+courtgraph confirm \
+  --input data/nba_snapshots/rs_2020_2024_v2/out/stints.jsonl \
+  --profiles data/nba_snapshots/rs_2020_2024_v2/player_profiles.jsonl \
+  --snapshot-dir data/nba_snapshots/rs_2020_2024_v2/snap \
+  --k 3,4,5,6,8,10 --outcomes turnover_rate,assist_rate --min-fga 1 \
+  --lineups 120 --boot 3000 --json
 ```
 
 Result JSONs are gitignored under `data/nba_snapshots/`. Rung-5 numbers:

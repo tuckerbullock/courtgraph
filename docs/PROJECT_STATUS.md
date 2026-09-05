@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-09-02 (data acquisition — RS dataset doubled to ~537k stints via more seasons + a data.nba.com reconstruction surface)
+Last updated: 2026-09-05 (turnover/assist mechanistic outcomes — two more nulls, closing the mechanistic-outcome ladder; cycle-1 research report added 2026-09-04)
 
 ## Current phase
 
@@ -216,7 +216,18 @@ feed), not an independent lineage. No demonstrated betting edge exists.
   - **The interaction arc is complete.** Symmetric pairs (rungs 4–5), pooled
     lift on lineup value (Phase A), across roster changes (transaction
     backtest), on individual production (Phase B), defensive side — **every
-    estimand null.** Next: the cycle-1 research report or the product side.
+    estimand null.**
+  - **Cycle-1 research report (2026-09-04).** `docs/RESEARCH_REPORT.md` — a
+    standalone capstone document synthesising the whole arc for a reader who
+    hasn't followed it day to day.
+  - **Turnover rate & assist rate — two more mechanistic nulls (2026-09-05).**
+    New stint-level attribution (`courtgraph.features.stint_events`, 98.7 %
+    event match) extends the mechanistic-outcome ladder past `three_share`.
+    Both **null** under the full K-sweep + bootstrap-CI confirmation:
+    turnover_rate beats the placebo at only 1 of 6 K values (chance-level);
+    assist_rate never beats it. `docs/INTERACTION_FINDINGS.md` → "Turnover
+    rate & assist rate". Closes the mechanistic-outcome ladder as scoped.
+    Next: the product side (§44 / issue #8) or another work-queue item.
 
 ## Not started
 - Nullable `days_rest` (stint schema v3) for the season-opener `missing_context`
@@ -266,7 +277,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 230 unit tests, Ruff, mypy over 74 source
+The current implementation passes 253 unit tests, Ruff, mypy over 74 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end on the 8-season regular-season archive (2016-17 → 2024-25): 10,744
 games with all three inputs, **10,316 accepted, 428 quarantined (4.0 %),

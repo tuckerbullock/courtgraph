@@ -169,7 +169,14 @@ def build_parser() -> argparse.ArgumentParser:
         default="three_share",
     )
     tmech.add_argument("--clusters", type=int, default=5)
-    tmech.add_argument("--min-fga", type=int, default=3)
+    tmech.add_argument(
+        "--min-fga",
+        type=int,
+        default=3,
+        help="drop stints below this many units of the outcome's own exposure "
+        "(FGA for shot outcomes; possessions for turnover_rate; FGM for "
+        "assist_rate -- pass a lower value, e.g. 1, for the latter two)",
+    )
     tmech.add_argument("--boot", type=int, default=2000)
     tmech.add_argument("--seed", type=int, default=0)
     tmech.add_argument("--json", action="store_true", help="print result as JSON")
@@ -233,7 +240,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--lineups", type=int, default=120, help="unseen-lineup holdout groups"
     )
     confirm.add_argument(
-        "--min-fga", type=int, default=3, help="drop stints below this many FGA"
+        "--min-fga",
+        type=int,
+        default=3,
+        help="drop stints below this many units of the outcome's own exposure "
+        "denominator -- FGA for pts_per_shot/rim_share/three_share, offensive "
+        "possessions for turnover_rate, FGM for assist_rate. The default (3) is "
+        "tuned for FGA; possessions and FGM run much smaller per stint (median "
+        "offensive possessions per stint is 3), so pass a lower value (e.g. 1) "
+        "for turnover_rate/assist_rate or it silently drops a large fraction "
+        "of stints",
     )
     confirm.add_argument(
         "--boot", type=int, default=2000, help="bootstrap resamples for the CI"
@@ -366,7 +382,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="the mechanistic target (default pts_per_shot)",
     )
     mechanistic.add_argument(
-        "--min-fga", type=int, default=3, help="drop stints below this many FGA"
+        "--min-fga",
+        type=int,
+        default=3,
+        help="drop stints below this many units of the outcome's own exposure "
+        "denominator -- FGA for pts_per_shot/rim_share/three_share, offensive "
+        "possessions for turnover_rate, FGM for assist_rate. The default (3) is "
+        "tuned for FGA; possessions and FGM run much smaller per stint (median "
+        "offensive possessions per stint is 3), so pass a lower value (e.g. 1) "
+        "for turnover_rate/assist_rate or it silently drops a large fraction "
+        "of stints",
     )
     mechanistic.add_argument(
         "--clusters", type=int, default=5, help="role clusters (default 5)"
