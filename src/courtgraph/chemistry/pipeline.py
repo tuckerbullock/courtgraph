@@ -512,6 +512,175 @@ def predict_lineup(
     )
 
 
+# z-scores for a Gaussian predictive interval (rung 3's posterior + noise SD).
+_Z_80 = 1.2816
+_Z_95 = 1.9600
+
+RUNG3_NOTE = (
+    "Additive talent + context only -- no interaction/chemistry term. "
+    "Lineup chemistry is not a supported predictive effect on scoring "
+    "(research cycle 1; see docs/RESEARCH_REPORT.md)."
+)
+
+
+@dataclass(frozen=True)
+class Rung3PredictionResult:
+    """A rung-3 (empirical-Bayes hierarchical additive) prediction for one
+    5-vs-5 lineup. Deliberately has no interaction/chemistry field -- rung 3
+    has none, and every symmetric/asymmetric interaction form tested on real
+    data was null (`docs/RESEARCH_REPORT.md`)."""
+
+    offense: tuple[int, ...]
+    defense: tuple[int, ...]
+    context: dict[str, Any]
+    talent: float
+    context_value: float
+    total: float
+    predictive_sd: float
+    interval_80: tuple[float, float]
+    interval_95: tuple[float, float]
+    support: dict[str, Any]
+    model_metadata: dict[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "offense": list(self.offense),
+            "defense": list(self.defense),
+            "context": dict(self.context),
+            "talent": self.talent,
+            "context_value": self.context_value,
+            "total": self.total,
+            "predictive_sd": self.predictive_sd,
+            "interval_80": list(self.interval_80),
+            "interval_95": list(self.interval_95),
+            "support": dict(self.support),
+            "model_metadata": dict(self.model_metadata),
+            "note": RUNG3_NOTE,
+        }
+
+
+def fit_rung3_file(
+    input_path: str | Path,
+    model_out: str | Path,
+    *,
+    config: Any | None = None,
+) -> tuple[Any, Path]:
+    """Fit rung 3 (empirical-Bayes hierarchical additive model, no interaction
+    term) on a real stint file and persist it via
+    :mod:`courtgraph.chemistry.rung3_artifact`."""
+
+    from courtgraph.chemistry import rung3_artifact
+    from courtgraph.chemistry.features import FeatureSpace
+    from courtgraph.chemistry.hierarchical import HierarchicalConfig, HierarchicalRidge
+
+    table = read_stints(input_path)
+    if len(table) < 50:
+        raise ValueError(
+            f"{input_path}: only {len(table)} stints; need a substantially larger "
+            "table to fit rung 3"
+        )
+    space = FeatureSpace.from_training(table)
+    design = space.build(table)
+    model = HierarchicalRidge.fit(
+        design, space, config=config if isinstance(config, HierarchicalConfig) else None
+    )
+
+    possessions: dict[int, int] = {}
+    for stint in table:
+        for pid in stint.offense_player_ids:
+            possessions[pid] = possessions.get(pid, 0) + stint.offensive_possessions
+
+    path = rung3_artifact.save_model(
+        model,
+        model_out,
+        metadata={
+            "source": str(input_path),
+            "stints": len(table),
+            "possessions": table.total_possessions(),
+            "training_player_possessions": {str(k): v for k, v in possessions.items()},
+        },
+    )
+    return model, path
+
+
+def predict_lineup_rung3(
+    model_path: str | Path,
+    offense: list[int],
+    defense: list[int],
+    *,
+    context: dict[str, Any] | None = None,
+) -> Rung3PredictionResult:
+    """Score an arbitrary 5-vs-5 lineup with a fitted rung-3 model. Additive
+    talent + context and a calibrated predictive interval only -- see
+    :data:`RUNG3_NOTE`."""
+
+    from courtgraph.chemistry import rung3_artifact
+
+    model, meta = rung3_artifact.load_model(model_path)
+    return _predict_lineup_rung3_with_model(model, meta, offense, defense, context)
+
+
+def _predict_lineup_rung3_with_model(
+    model: Any,
+    meta: dict[str, Any],
+    offense: list[int],
+    defense: list[int],
+    context: dict[str, Any] | None,
+) -> Rung3PredictionResult:
+    if len(offense) != LINEUP_SIZE or len(defense) != LINEUP_SIZE:
+        raise ValueError("offense and defense each need exactly 5 player ids")
+    if len(set(offense)) != LINEUP_SIZE or len(set(defense)) != LINEUP_SIZE:
+        raise ValueError("offense and defense player ids must be distinct")
+    if set(offense) & set(defense):
+        raise ValueError("a player cannot be on both offense and defense")
+
+    import numpy as np
+
+    from courtgraph.chemistry.chemistry_model import _reference_stint
+    from courtgraph.chemistry.stints import StintTable
+
+    merged = {**DEFAULT_CONTEXT, **(context or {})}
+    off_t = tuple(sorted(int(p) for p in offense))
+    def_t = tuple(sorted(int(p) for p in defense))
+
+    stint = _reference_stint(off_t, def_t, merged)
+    design = model.feature_space.build(StintTable.from_stints([stint]))
+    add = model.decompose_row(design, 0)
+    point, sd, _w = model.group_predictive(
+        design, {"lineup": np.array([0], dtype=np.int64)}
+    )["lineup"]
+
+    index = model.feature_space.player_index()
+    unseen_off = tuple(p for p in off_t if p not in index)
+    unseen_def = tuple(p for p in def_t if p not in index)
+    poss_table = {
+        int(k): int(v) for k, v in meta.get("training_player_possessions", {}).items()
+    }
+    off_poss = [poss_table.get(p, 0) for p in off_t]
+    support = {
+        "unseen_offense_players": list(unseen_off),
+        "unseen_defense_players": list(unseen_def),
+        "min_offense_player_possessions": min(off_poss) if off_poss else 0,
+        "median_offense_player_possessions": (
+            float(np.median(off_poss)) if off_poss else 0.0
+        ),
+    }
+
+    return Rung3PredictionResult(
+        offense=off_t,
+        defense=def_t,
+        context=merged,
+        talent=add.talent,
+        context_value=add.context,
+        total=float(point),
+        predictive_sd=float(sd),
+        interval_80=(float(point - _Z_80 * sd), float(point + _Z_80 * sd)),
+        interval_95=(float(point - _Z_95 * sd), float(point + _Z_95 * sd)),
+        support=support,
+        model_metadata=meta,
+    )
+
+
 def _syn_config_dict(cfg: SyntheticConfig) -> dict[str, Any]:
     return {
         "seed": cfg.seed,

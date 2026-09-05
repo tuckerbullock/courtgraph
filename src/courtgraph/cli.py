@@ -552,6 +552,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="override a context field (repeatable), e.g. --context playoff=1",
     )
     predict.add_argument("--json", action="store_true", help="print result as JSON")
+
+    fit_rung3 = subparsers.add_parser(
+        "fit-rung3",
+        help="fit rung 3 (empirical-Bayes hierarchical additive model, no "
+        "interaction term) on a real stint file",
+    )
+    fit_rung3.add_argument(
+        "--input", type=Path, required=True, help="stint file (.jsonl/.json)"
+    )
+    fit_rung3.add_argument(
+        "--model-out",
+        type=Path,
+        required=True,
+        help="where to write the rung-3 model artifact",
+    )
+    fit_rung3.add_argument("--json", action="store_true", help="print result as JSON")
+
+    predict_rung3 = subparsers.add_parser(
+        "predict-rung3",
+        help="score one 5-vs-5 lineup with a fitted rung-3 model -- additive "
+        "talent + context and a calibrated interval only, no chemistry claim",
+    )
+    predict_rung3.add_argument(
+        "--model", type=Path, required=True, help="rung-3 model artifact path"
+    )
+    predict_rung3.add_argument(
+        "--offense", required=True, help="5 comma-separated offensive player ids"
+    )
+    predict_rung3.add_argument(
+        "--defense", required=True, help="5 comma-separated defensive player ids"
+    )
+    predict_rung3.add_argument(
+        "--context",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="override a context field (repeatable), e.g. --context playoff=1",
+    )
+    predict_rung3.add_argument(
+        "--json", action="store_true", help="print result as JSON"
+    )
     return parser
 
 
@@ -1567,6 +1608,75 @@ def _cmd_predict(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_fit_rung3(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import fit_rung3_file
+
+    try:
+        model, path = fit_rung3_file(args.input, args.model_out)
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"fit-rung3: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        payload = {
+            "model_path": str(path),
+            "variance_components": model.variance_components(),
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True), file=stream)
+        return 0
+    vc = model.variance_components()
+    print(f"fit-rung3: wrote {path}", file=stream)
+    print(
+        f"  sigma {vc['sigma']:.2f}  tau_off {vc['tau_off']:.3f}  "
+        f"tau_def {vc['tau_def']:.3f}  converged {vc['converged']} "
+        f"({vc['n_iters']} EM iters)",
+        file=stream,
+    )
+    return 0
+
+
+def _cmd_predict_rung3(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import predict_lineup_rung3
+
+    try:
+        result = predict_lineup_rung3(
+            args.model,
+            _parse_ids(args.offense),
+            _parse_ids(args.defense),
+            context=_parse_context(args.context),
+        )
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"predict-rung3: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True), file=stream)
+        return 0
+    print(
+        f"offense {list(result.offense)}  vs  defense {list(result.defense)}",
+        file=stream,
+    )
+    print(f"  talent (T)   {result.talent:8.2f}", file=stream)
+    print(f"  context (K)  {result.context_value:8.2f}", file=stream)
+    print(
+        f"  total value  {result.total:8.2f}   points per 100 possessions  "
+        f"(sd {result.predictive_sd:.2f})",
+        file=stream,
+    )
+    lo80, hi80 = result.interval_80
+    lo95, hi95 = result.interval_95
+    print(f"  80% interval [{lo80:+.2f}, {hi80:+.2f}]", file=stream)
+    print(f"  95% interval [{lo95:+.2f}, {hi95:+.2f}]", file=stream)
+    unseen = result.support["unseen_offense_players"]
+    print(
+        f"  min player exposure {result.support['min_offense_player_possessions']} "
+        "possessions" + (f"  |  unseen players {unseen}" if unseen else ""),
+        file=stream,
+    )
+    print(f"  {result.as_dict()['note']}", file=stream)
+    return 0
+
+
 def _cmd_app(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.app.server import serve
 
@@ -1594,6 +1704,8 @@ _COMMANDS = {
     "player-features": _cmd_player_features,
     "player-production": _cmd_player_production,
     "predict": _cmd_predict,
+    "fit-rung3": _cmd_fit_rung3,
+    "predict-rung3": _cmd_predict_rung3,
 }
 
 

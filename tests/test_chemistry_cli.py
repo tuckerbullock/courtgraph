@@ -229,6 +229,93 @@ class ChemistryCommandTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             predict_lineup(self.demo.model_path, [1, 2, 3, 4], [5, 6, 7, 8, 9])
 
+    def test_fit_rung3_then_predict_rung3_round_trip(self) -> None:
+        out_model = Path(self._dir.name) / "rung3.json"
+        out = StringIO()
+        code = main(
+            [
+                "fit-rung3",
+                "--input",
+                str(self.demo.stints_path),
+                "--model-out",
+                str(out_model),
+                "--json",
+            ],
+            output=out,
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(out_model.is_file())
+        self.assertIn("variance_components", json.loads(out.getvalue()))
+
+        pred = StringIO()
+        code = main(
+            [
+                "predict-rung3",
+                "--model",
+                str(out_model),
+                "--offense",
+                "1001,1002,1003,1004,1005",
+                "--defense",
+                "1006,1007,1008,1009,1010",
+                "--context",
+                "playoff=1",
+            ],
+            output=pred,
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("total value", pred.getvalue())
+        self.assertIn("no interaction/chemistry term", pred.getvalue())
+
+        pred_json = StringIO()
+        code = main(
+            [
+                "predict-rung3",
+                "--model",
+                str(out_model),
+                "--offense",
+                "1001,1002,1003,1004,1005",
+                "--defense",
+                "1006,1007,1008,1009,1010",
+                "--json",
+            ],
+            output=pred_json,
+        )
+        self.assertEqual(code, 0)
+        payload = json.loads(pred_json.getvalue())
+        self.assertNotIn("interaction", payload)
+
+    def test_predict_rung3_rejects_a_missing_model(self) -> None:
+        code = main(
+            [
+                "predict-rung3",
+                "--model",
+                str(Path(self._dir.name) / "nonexistent.json"),
+                "--offense",
+                "1,2,3,4,5",
+                "--defense",
+                "6,7,8,9,10",
+            ],
+            output=StringIO(),
+        )
+        self.assertEqual(code, 2)
+
+    def test_predict_rung3_rejects_a_bad_lineup(self) -> None:
+        from courtgraph.chemistry.pipeline import predict_lineup_rung3
+
+        out_model = Path(self._dir.name) / "rung3_bad_lineup.json"
+        main(
+            [
+                "fit-rung3",
+                "--input",
+                str(self.demo.stints_path),
+                "--model-out",
+                str(out_model),
+            ],
+            output=StringIO(),
+        )
+        with self.assertRaises(ValueError):
+            predict_lineup_rung3(out_model, [1, 2, 3, 4], [5, 6, 7, 8, 9])
+
     def test_baselines_compares_rung2_and_rung3_calibration(self) -> None:
         out = StringIO()
         code = main(
