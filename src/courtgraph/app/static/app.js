@@ -65,6 +65,32 @@ function renderQuality() {
   const entries = [['Recorded source', real.source], ['Archive coverage', `${c.archive_games} games found; ${c.complete_games} complete inputs; ${c.attempted_games} attempted; ${c.accepted_games} accepted`], ['Data through', real.cutoff || 'No accepted dates'], ['Converter', real.converter], ['Ingest generated', real.created_utc], ['Parser', `${real.parser.tool || 'Unknown'} ${real.parser.version || ''}`], ['Source commit', real.source_commit], ['Verified stint SHA-256', real.checksum], ['Use', 'Local demonstration only. No redistribution. Participants are not complete dated rosters.']];
   $('provenance').innerHTML = entries.map(([key,value]) => `<dt>${esc(key)}</dt><dd>${esc(value)}</dd>`).join('');
 }
+async function loadTeamPlayers(side) {
+  const team = $(`predict-${side}-team`).value;
+  const container = $(`predict-${side}-selects`);
+  if (!team) { container.innerHTML = ''; return; }
+  $('predict-error').hidden = true;
+  try {
+    const pool = await api(`/api/player-pool?team=${encodeURIComponent(team)}`);
+    const label = side === 'off' ? 'Offense' : 'Defense';
+    container.innerHTML = Array.from({length:5}, (_,i) => `<div class="player-slot"><span aria-hidden="true">${String(i+1).padStart(2,'0')}</span><label><span class="slot-label">${label} player ${i+1}</span><select id="predict-${side}-${i}" required></select></label></div>`).join('');
+    for (let i=0;i<5;i++) { $(`predict-${side}-${i}`).replaceChildren(...pool.players.map(p => new Option(`${p.name} (${num(p.possessions)} poss.)`, p.id))); $(`predict-${side}-${i}`).selectedIndex = Math.min(i, pool.players.length - 1); }
+  } catch (error) { container.innerHTML = ''; showError('predict-error', error); }
+}
+function predictSelected(side) { return Array.from({length:5}, (_,i) => Number($(`predict-${side}-${i}`)?.value)); }
+async function predictLineup() {
+  $('predict-error').hidden = true;
+  $('predict-button').disabled = true;
+  $('predict-button').textContent = 'Fitting rung 3 on first use — this can take a minute…';
+  try {
+    const offense = predictSelected('off'), defense = predictSelected('def');
+    if (offense.some(Number.isNaN) || defense.some(Number.isNaN)) throw new Error('Choose an offense team and a defense team first.');
+    const result = await api('/api/predict-real', {offense, defense, home: $('predict-home').checked, playoff: $('predict-playoff').checked, rest: Number($('predict-rest').value)});
+    const unseenOff = result.support.unseen_offense_players, unseenDef = result.support.unseen_defense_players;
+    $('predict-results').innerHTML = `<div class="comparison-top"><div><span class="eyebrow">MODEL ESTIMATE / REAL DATA</span><h2>Additive prediction.</h2><p>Offensive points per 100 possessions. Not net rating.</p></div></div><div class="table-scroll"><table><thead><tr><th>Component</th><th>Value</th></tr></thead><tbody><tr><td>Talent (individual + baseline)</td><td class="number">${dec(result.talent)}</td></tr><tr><td>Context</td><td class="number">${dec(result.context_value)}</td></tr><tr class="total"><td>Total predicted value</td><td class="number">${dec(result.total)}</td></tr></tbody></table></div><div class="uncertainty"><strong>Calibrated predictive intervals:</strong> 80% [${signed(result.interval_80[0])}, ${signed(result.interval_80[1])}] &nbsp;·&nbsp; 95% [${signed(result.interval_95[0])}, ${signed(result.interval_95[1])}].<br>${esc(result.note)}</div>${(unseenOff.length || unseenDef.length) ? `<p class="sample-warning">Never observed in the training data — additive-only, no talent estimate: ${[...unseenOff,...unseenDef].join(', ')}</p>` : ''}<p class="footnote">Weakest offensive exposure in this lineup: ${num(result.support.min_offense_player_possessions)} possessions.</p>`;
+  } catch (error) { $('predict-results').replaceChildren(); showError('predict-error', error); }
+  finally { $('predict-button').disabled = false; $('predict-button').textContent = 'Predict lineup →'; }
+}
 function buildSelectors() {
   for (const [key,title] of [['offense','Lineup A'],['alternative','Lineup B'],['defense','Opponent']]) {
     $(`${key}-selects`).innerHTML = Array.from({length:5}, (_,i) => `<div class="player-slot"><span aria-hidden="true">${String(i+1).padStart(2,'0')}</span><label><span class="slot-label">${title} player ${i+1}</span><select id="${key}-${i}" required></select></label></div>`).join('');
@@ -117,6 +143,9 @@ $('comparison-form').addEventListener('submit', compare);
 $('comparison-form').addEventListener('change', dirty);
 $('copy-a').addEventListener('click', () => { setLineup('alternative',selected('offense')); dirty(); });
 $('reset-lineups').addEventListener('click', resetLineups);
+$('predict-off-team').addEventListener('change', () => loadTeamPlayers('off'));
+$('predict-def-team').addEventListener('change', () => loadTeamPlayers('def'));
+$('predict-button').addEventListener('click', predictLineup);
 async function start() {
   try {
     state = await api('/api/state'); buildSelectors();
@@ -124,6 +153,7 @@ async function start() {
     if (state.real.loaded) {
       options('game-filter',state.real.games.map(g => ({id:g.id,name:`${g.date || 'date unavailable'} · ${gameMatchup(g)}${g.status === 'accepted' ? '' : ` · ${g.status.replace('_', ' ')}`}`})),`All ${state.real.coverage.archive_games} archive games`);
       options('team-filter',state.real.teams,'All teams'); options('player-filter',[...state.real.players].sort((a,b)=>a.name.localeCompare(b.name)),'Any player');
+      options('predict-off-team',state.real.teams,'Choose a team'); options('predict-def-team',state.real.teams,'Choose a team');
       renderQuality(); await loadObservations();
     }
     $('loading').hidden = true; mode('real'); await compare();

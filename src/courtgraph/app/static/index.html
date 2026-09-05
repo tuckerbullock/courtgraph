@@ -32,6 +32,17 @@
           <aside class="panel evidence-panel" aria-label="Lineup evidence"><span class="eyebrow">BEHIND THE NUMBER</span><div id="lineup-detail"><h2>Inspect a lineup</h2><p>Select a row to see its sample, opponents, and limitations.</p></div></aside>
         </div>
         <section class="panel quality-panel"><div class="panel-heading"><div><h2>Games not used</h2><p>Every failed or incomplete archive game and the recorded reason.</p></div><span class="small-tag">NO SILENT DROPS</span></div><div id="quality-games" class="quality-games"></div><details class="provenance"><summary>Source & provenance</summary><dl id="provenance"></dl></details></section>
+        <section class="panel predict-panel" aria-labelledby="predict-title"><div class="panel-heading"><div><h2 id="predict-title">Predict a real lineup</h2><p>Rung 3: additive talent + context, fit once on this ingest.</p></div><span class="small-tag">NO CHEMISTRY CLAIM</span></div>
+          <div class="notice"><strong>Additive talent + context only.</strong> Lineup chemistry is not a supported predictive effect on scoring (research cycle 1 — see docs/RESEARCH_REPORT.md). There is no interaction term in this prediction, ever.</div>
+          <div class="predict-grid">
+            <div class="predict-side"><label>Offense team<select id="predict-off-team"><option value="">Choose a team</option></select></label><div id="predict-off-selects" class="player-selects"></div></div>
+            <div class="predict-side"><label>Defense team<select id="predict-def-team"><option value="">Choose a team</option></select></label><div id="predict-def-selects" class="player-selects"></div></div>
+          </div>
+          <div class="context-fields"><label class="check"><input id="predict-home" type="checkbox" checked> Offense at home</label><label class="check"><input id="predict-playoff" type="checkbox"> Playoff context</label><label>Rest days<input id="predict-rest" type="number" min="0" max="7" value="1"></label></div>
+          <div class="actions"><button id="predict-button" class="primary" type="button">Predict lineup →</button></div>
+          <div id="predict-error" class="notice error" role="alert" hidden></div>
+          <section id="predict-results" class="panel comparison-panel" aria-live="polite"></section>
+        </section>
       </div>
     </section>
     <section id="synthetic-view" hidden aria-labelledby="synthetic-title">

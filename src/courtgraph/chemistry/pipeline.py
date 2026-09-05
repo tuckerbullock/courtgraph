@@ -666,6 +666,11 @@ def _predict_lineup_rung3_with_model(
         ),
     }
 
+    # the full per-player training-possessions table (hundreds/thousands of
+    # entries) is only an input to `support` above; keep it out of the
+    # per-prediction metadata so a JSON result stays readable.
+    small_meta = {k: v for k, v in meta.items() if k != "training_player_possessions"}
+
     return Rung3PredictionResult(
         offense=off_t,
         defense=def_t,
@@ -677,7 +682,7 @@ def _predict_lineup_rung3_with_model(
         interval_80=(float(point - _Z_80 * sd), float(point + _Z_80 * sd)),
         interval_95=(float(point - _Z_95 * sd), float(point + _Z_95 * sd)),
         support=support,
-        model_metadata=meta,
+        model_metadata=small_meta,
     )
 
 
