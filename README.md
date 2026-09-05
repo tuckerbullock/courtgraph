@@ -129,7 +129,8 @@ within-NBA score check is not evidence of predictive accuracy.
 
 ## Interaction research
 
-`courtgraph baselines` compares the model-ladder rungs (2 additive / 3
+`courtgraph baselines` compares the model-ladder rungs (0 context-only mean /
+1 empirical-Bayes-shrunk exact-lineup ratings / 2 additive RAPM / 3
 hierarchical EB / 4 explicit pairs) on the leakage-safe holdouts;
 `courtgraph transport` trains on one stint file and evaluates on a disjoint
 one (regular season → held-out playoffs); `courtgraph player-features` derives

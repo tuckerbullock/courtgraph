@@ -2,7 +2,29 @@
 
 Last updated: 2026-09-05
 
-## Active — real-data lineup predictor (product side) — DONE
+## Active — model-ladder rungs 0 and 1 — DONE
+
+`task/rung01-ladder`. `RESEARCH_CONTRACT.md` §16 requires every rung 0-7 to
+exist and be reported together; rungs 2-5 were implemented, 0 and 1 were not.
+This fills them:
+
+- `src/courtgraph/chemistry/rung01.py` — `ContextMeanModel` (rung 0:
+  context-only weighted least squares) and `LineupMeanModel` (rung 1: rung 0
+  + an empirical-Bayes-shrunk per-exact-lineup residual, `B_L = τ²/(τ² +
+  σ²/w_L)`, zero for a lineup unseen in training). Both closed-form,
+  single-pass, no RNG.
+- Wired into `compare_rungs` / `courtgraph baselines` output as
+  `rung0_macro_rmse` / `rung1_macro_rmse` (and the human table).
+- Real 297k result: rung 1 **beats rung 0** on chronological (macro RMSE
+  2.30 vs 2.83 — and beats rungs 2/3 there too: direct lineup history is a
+  strong predictor when the exact five recurs), identical to rung 0 on
+  unseen_pair / unseen_lineup by construction, and both are far behind
+  additive talent on unseen_lineup (8.25 vs rung 2's 4.94). Rung 1 clears
+  its "must beat rung 0" exit criterion; the pattern reinforces that the
+  structural holdouts, not chronological, are the real generalisation test.
+- 271 tests (3 new in `tests/test_rung01.py`), ruff/mypy/dep-free clean.
+
+## Also done this session — real-data lineup predictor (product side) — DONE
 
 `task/rung3-lineup-predictor`. After the interaction arc closed (below) the
 user asked to switch to the product side (issue #8 / master plan §44).
@@ -228,7 +250,8 @@ cohort rather than a live fetch) are **done** — see "Completed" above and
 6. **Defensive-side extension** — roles / redundancy / mechanistic on defense
    (the pooled defensive lift is done and null); `matchups` surface (now
    acquired) feeds this.
-9. **Model-ladder gaps** — rung 1 explicit; rung 5 re-run under bootstrap CI.
+9. **Model-ladder gaps** — rungs 0 and 1 done (above); still open: rung 5
+   re-run under bootstrap CI, rung 7.
 10. **Remaining contract deliverables** — strong unseen-pair holdout; seed
     stability; decision log.
 11. **2025-26** — needs the live fetch or a `cdnnba`→pbp importer path.

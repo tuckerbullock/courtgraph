@@ -838,7 +838,8 @@ def _cmd_baselines(args: argparse.Namespace, stream: TextIO) -> int:
     )
     r4 = args.rung4
     print(
-        f"  {'holdout':<14} {'groups':>6}  {'r2 macro':>9} {'r3 macro':>9}"
+        f"  {'holdout':<14} {'groups':>6}  {'r0 macro':>9} {'r1 macro':>9} "
+        f"{'r2 macro':>9} {'r3 macro':>9}"
         + (f" {'r4 macro':>9}" if r4 else "")
         + f"  {'r3 cov50/80/95':>16}  {'r3 slope':>8}",
         file=stream,
@@ -846,7 +847,8 @@ def _cmd_baselines(args: argparse.Namespace, stream: TextIO) -> int:
     for h in comparison.holdouts:
         cal = h.rung3_calibration
         line = (
-            f"  {h.kind:<14} {h.n_groups:>6}  {h.rung2_macro_rmse:>9.3f} "
+            f"  {h.kind:<14} {h.n_groups:>6}  {h.rung0_macro_rmse:>9.3f} "
+            f"{h.rung1_macro_rmse:>9.3f} {h.rung2_macro_rmse:>9.3f} "
             f"{h.rung3_macro_rmse:>9.3f}"
         )
         if r4 and h.rung4_macro_rmse is not None:

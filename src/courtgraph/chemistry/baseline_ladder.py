@@ -40,10 +40,18 @@ from courtgraph.chemistry.pair_interaction import (
     PairHierarchicalRidge,
     PairVocabulary,
 )
+from courtgraph.chemistry.rung01 import ContextMeanModel, LineupMeanModel
 from courtgraph.chemistry.splits import SplitManifest
 from courtgraph.chemistry.stints import StintTable, pair_id
 
 FloatArray = NDArray[np.float64]
+
+
+def _wmean(values: FloatArray, weight: FloatArray, rows: list[int]) -> float:
+    idx = np.asarray(rows, dtype=np.int64)
+    return float(np.average(values[idx], weights=weight[idx]))
+
+
 _HOLDOUTS = ("chronological", "unseen_pair", "unseen_lineup")
 
 
@@ -53,6 +61,8 @@ class HoldoutLadderResult:
     n_train: int
     n_test: int
     n_groups: int
+    rung0_macro_rmse: float
+    rung1_macro_rmse: float
     rung2_macro_rmse: float
     rung3_macro_rmse: float
     rung2_micro_rmse: float
@@ -78,6 +88,8 @@ class HoldoutLadderResult:
             "n_train": self.n_train,
             "n_test": self.n_test,
             "n_groups": self.n_groups,
+            "rung0_macro_rmse": self.rung0_macro_rmse,
+            "rung1_macro_rmse": self.rung1_macro_rmse,
             "rung2_macro_rmse": self.rung2_macro_rmse,
             "rung3_macro_rmse": self.rung3_macro_rmse,
             "rung2_micro_rmse": self.rung2_micro_rmse,
@@ -376,6 +388,8 @@ def compare_rungs(
         train_design = space.build(train_table)
         test_design = space.build(test_table)
 
+        rung0 = ContextMeanModel.fit(train_design, space)
+        rung1 = LineupMeanModel.fit(train_table, train_design, space)
         rung2 = AdditiveRidge.fit(train_design, space)
         rung3 = HierarchicalRidge.fit(train_design, space, config=config)
 
@@ -383,6 +397,11 @@ def compare_rungs(
         realized = _group_realized(test_design, groups)
         keys = list(groups)
         group_arrays = {g: np.asarray(groups[g], dtype=np.int64) for g in keys}
+
+        p0_row = rung0.predict(test_design)
+        p1_row = rung1.predict(test_table, test_design)
+        p0 = np.array([_wmean(p0_row, test_design.weight, groups[k]) for k in keys])
+        p1 = np.array([_wmean(p1_row, test_design.weight, groups[k]) for k in keys])
 
         r3 = rung3.group_predictive(test_design, group_arrays)
         r2 = _rung2_band(
@@ -445,6 +464,8 @@ def compare_rungs(
                 n_train=len(train_table),
                 n_test=len(test_table),
                 n_groups=len(keys),
+                rung0_macro_rmse=_rmse(p0, y),
+                rung1_macro_rmse=_rmse(p1, y),
                 rung2_macro_rmse=_rmse(p2, y),
                 rung3_macro_rmse=_rmse(p3, y),
                 rung2_micro_rmse=_rmse(
@@ -465,6 +486,10 @@ def compare_rungs(
         "posterior plus outcome noise (empirical Bayes, approximate).",
         "EM recovers the realised player-pool effect SD, not the generative "
         "SyntheticConfig scale.",
+        "Rung 0 is a context-only weighted least squares; rung 1 adds an "
+        "empirical-Bayes-shrunk per-exact-lineup residual (0 for a lineup "
+        "unseen in training, so rung 1 == rung 0 on the unseen_lineup "
+        "holdout by construction).",
     )
     return LadderComparison(
         variance_components=global_rung3.variance_components(),
