@@ -159,7 +159,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tmech.add_argument(
         "--outcome",
-        choices=("three_share", "pts_per_shot", "rim_share"),
+        choices=(
+            "three_share",
+            "pts_per_shot",
+            "rim_share",
+            "turnover_rate",
+            "assist_rate",
+        ),
         default="three_share",
     )
     tmech.add_argument("--clusters", type=int, default=5)
@@ -220,8 +226,8 @@ def build_parser() -> argparse.ArgumentParser:
     confirm.add_argument(
         "--outcomes",
         default="three_share",
-        help="comma-separated mechanistic outcomes "
-        "(three_share, pts_per_shot, rim_share)",
+        help="comma-separated mechanistic outcomes (three_share, pts_per_shot, "
+        "rim_share, turnover_rate, assist_rate)",
     )
     confirm.add_argument(
         "--lineups", type=int, default=120, help="unseen-lineup holdout groups"
@@ -349,7 +355,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     mechanistic.add_argument(
         "--outcome",
-        choices=("pts_per_shot", "rim_share", "three_share"),
+        choices=(
+            "pts_per_shot",
+            "rim_share",
+            "three_share",
+            "turnover_rate",
+            "assist_rate",
+        ),
         default="pts_per_shot",
         help="the mechanistic target (default pts_per_shot)",
     )
@@ -875,21 +887,25 @@ def _cmd_transport(args: argparse.Namespace, stream: TextIO) -> int:
 
 
 def _cmd_transport_mechanistic(args: argparse.Namespace, stream: TextIO) -> int:
-    from courtgraph.chemistry.mechanistic import transport_mechanistic
+    from courtgraph.chemistry.mechanistic import EVENT_OUTCOMES, transport_mechanistic
     from courtgraph.chemistry.stints import read_stints
     from courtgraph.features.player_season import read_player_profiles
     from courtgraph.features.role_clusters import fit_role_clusters
+    from courtgraph.features.stint_events import attribute_play_events
     from courtgraph.features.stint_shots import attribute_shots
     from courtgraph.ingest.snapshot import SnapshotError, load_snapshot
 
     if args.boot < 100 or args.clusters < 2 or args.min_fga < 1:
         print("transport-mechanistic: bad --boot / --clusters / --min-fga", file=stream)
         return 2
+    attribute = (
+        attribute_play_events if args.outcome in EVENT_OUTCOMES else attribute_shots
+    )
     try:
         train = read_stints(args.train)
         test = read_stints(args.test)
-        train_attr = attribute_shots(load_snapshot(args.train_snapshot), train)
-        test_attr = attribute_shots(load_snapshot(args.test_snapshot), test)
+        train_attr = attribute(load_snapshot(args.train_snapshot), train)
+        test_attr = attribute(load_snapshot(args.test_snapshot), test)
         clustering = fit_role_clusters(
             read_player_profiles(args.profiles), n_clusters=args.clusters, seed=0
         )
@@ -1220,7 +1236,7 @@ def _cmd_mechanistic(args: argparse.Namespace, stream: TextIO) -> int:
     print(
         f"mechanistic [{result.outcome}]: {result.n_stints_kept} stints "
         f"(>= {result.min_fga} FGA), mean {result.mean_outcome:.3f}, "
-        f"shot match {result.shots_match_rate:.1%}",
+        f"match rate {result.match_rate:.1%}",
         file=stream,
     )
     vc = result.role_variance_components

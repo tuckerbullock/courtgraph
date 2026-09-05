@@ -1,18 +1,26 @@
 """Candidate idea #2 -- mechanistic outcomes instead of points per 100.
 
 Stint points/100 is a very noisy target (sigma ~ 119). A more *mechanical*
-quantity -- how a lineup shifts its own shot selection or shot quality -- might
-carry non-additive structure the aggregate outcome washes out. This module
-swaps the design's outcome for one of:
+quantity -- how a lineup shifts its own shot selection, shot quality, or ball
+security -- might carry non-additive structure the aggregate outcome washes
+out. This module swaps the design's outcome for one of:
 
-* ``pts_per_shot``  -- field-goal points per shot attempt (an eFG proxy: does
-  lineup fit improve shot *quality* beyond the sum of individual tendencies?);
-* ``rim_share``     -- share of shots at the rim (spacing: does a shooter on
-  the floor pull teammates' shots toward the basket?);
-* ``three_share``   -- share of shots from three.
+* ``pts_per_shot``    -- field-goal points per shot attempt (an eFG proxy:
+  does lineup fit improve shot *quality* beyond the sum of individual
+  tendencies?);
+* ``rim_share``       -- share of shots at the rim (spacing: does a shooter
+  on the floor pull teammates' shots toward the basket?);
+* ``three_share``     -- share of shots from three;
+* ``turnover_rate``   -- turnovers per offensive possession
+  (:mod:`courtgraph.features.stint_events`);
+* ``assist_rate``     -- share of made shots that were assisted
+  (:mod:`courtgraph.features.stint_events`).
 
-Weights become field-goal attempts. It then runs the same rung 2 / rung 3 /
-role-conditioned / permuted-role-placebo comparison as
+The first three are weighted by field-goal attempts and read off
+:class:`~courtgraph.features.stint_shots.StintShots`; the last two are
+weighted by offensive possessions / makes respectively and read off
+:class:`~courtgraph.features.stint_events.StintPlayEvents`. It then runs the
+same rung 2 / rung 3 / role-conditioned / permuted-role-placebo comparison as
 :mod:`courtgraph.chemistry.role_eval` on the three leakage-safe holdouts.
 """
 
@@ -37,37 +45,70 @@ from courtgraph.chemistry.role_interaction import (
 from courtgraph.chemistry.splits import SplitManifest, make_all_splits
 from courtgraph.chemistry.stints import StintTable
 from courtgraph.features.role_clusters import RoleClustering, permuted_clustering
+from courtgraph.features.stint_events import EventAttribution, StintPlayEvents
 from courtgraph.features.stint_shots import ShotAttribution, StintShots
 
 FloatArray = NDArray[np.float64]
 _HOLDOUTS = ("chronological", "unseen_pair", "unseen_lineup")
-OUTCOMES = ("pts_per_shot", "rim_share", "three_share")
-_ZERO = StintShots(0, 0, 0, 0, 0, 0, 0, 0)
+OUTCOMES = ("pts_per_shot", "rim_share", "three_share", "turnover_rate", "assist_rate")
+EVENT_OUTCOMES = frozenset({"turnover_rate", "assist_rate"})
+MechanisticAttribution = ShotAttribution | EventAttribution
+_StintRecord = StintShots | StintPlayEvents
+_ZERO_SHOTS = StintShots(0, 0, 0, 0, 0, 0, 0, 0)
+_ZERO_EVENTS = StintPlayEvents(0, 0, 0, 0)
 
 
-def _outcome_value(shots: StintShots, outcome: str) -> float:
-    if outcome == "pts_per_shot":
-        return shots.points_per_shot
-    if outcome == "rim_share":
-        return shots.rim_share
-    if outcome == "three_share":
-        return shots.three_share
+def _outcome_value(record: _StintRecord, outcome: str) -> float:
+    if isinstance(record, StintShots):
+        if outcome == "pts_per_shot":
+            return record.points_per_shot
+        if outcome == "rim_share":
+            return record.rim_share
+        if outcome == "three_share":
+            return record.three_share
+    elif isinstance(record, StintPlayEvents):
+        if outcome == "turnover_rate":
+            return record.turnover_rate
+        if outcome == "assist_rate":
+            return record.assist_rate
     raise ValueError(f"unknown mechanistic outcome {outcome!r}")
+
+
+def _outcome_weight(record: _StintRecord, outcome: str) -> float:
+    """The design weight for ``outcome`` -- the rate's own denominator, so a
+    stint with more exposure to the outcome counts for more, mirroring how
+    rung 2/3 weight by offensive possessions."""
+
+    if isinstance(record, StintShots):
+        return float(record.fga)
+    if outcome == "turnover_rate":
+        return float(record.offensive_possessions)
+    return float(record.fgm)  # assist_rate
+
+
+def _zero_for(attribution: MechanisticAttribution) -> _StintRecord:
+    return _ZERO_EVENTS if isinstance(attribution, EventAttribution) else _ZERO_SHOTS
 
 
 def mechanistic_table_and_design(
     space: FeatureSpace,
     table: StintTable,
-    attribution: ShotAttribution,
+    attribution: MechanisticAttribution,
     outcome: str,
     *,
     min_fga: int,
 ) -> tuple[StintTable, DesignMatrices]:
-    """Filter to stints with ``>= min_fga`` attributed shots, then build a
-    design whose ``y`` is the mechanistic outcome and ``weight`` is FGA."""
+    """Filter to stints with ``>= min_fga`` of the outcome's own exposure
+    (FGA for the shot outcomes; possessions / FGM for turnover / assist
+    rate), then build a design whose ``y`` is the mechanistic outcome and
+    ``weight`` is that same exposure."""
 
+    zero = _zero_for(attribution)
     kept = [
-        s for s in table if attribution.per_stint.get(s.stint_id, _ZERO).fga >= min_fga
+        s
+        for s in table
+        if _outcome_weight(attribution.per_stint.get(s.stint_id, zero), outcome)
+        >= min_fga
     ]
     kt = StintTable.from_stints(kept)
     design = space.build(kt)
@@ -76,7 +117,8 @@ def mechanistic_table_and_design(
         dtype=np.float64,
     )
     w = np.array(
-        [float(attribution.per_stint[s.stint_id].fga) for s in kt], dtype=np.float64
+        [_outcome_weight(attribution.per_stint[s.stint_id], outcome) for s in kt],
+        dtype=np.float64,
     )
     return kt, replace(design, y=y, weight=w)
 
@@ -115,7 +157,7 @@ class MechanisticComparison:
     min_fga: int
     n_stints_kept: int
     mean_outcome: float
-    shots_match_rate: float
+    match_rate: float
     role_pair_matrix: list[list[float]]
     role_variance_components: dict[str, Any]
     holdouts: tuple[MechanisticHoldoutResult, ...]
@@ -127,7 +169,7 @@ class MechanisticComparison:
             "min_fga": self.min_fga,
             "n_stints_kept": self.n_stints_kept,
             "mean_outcome": self.mean_outcome,
-            "shots_match_rate": self.shots_match_rate,
+            "match_rate": self.match_rate,
             "role_pair_matrix": self.role_pair_matrix,
             "role_variance_components": dict(self.role_variance_components),
             "holdouts": [h.as_dict() for h in self.holdouts],
@@ -137,7 +179,7 @@ class MechanisticComparison:
 
 def evaluate_mechanistic(
     table: StintTable,
-    attribution: ShotAttribution,
+    attribution: MechanisticAttribution,
     clustering: RoleClustering,
     *,
     outcome: str = "pts_per_shot",
@@ -230,8 +272,9 @@ def evaluate_mechanistic(
         )
 
     notes = (
-        f"Outcome {outcome!r}: y is the possession-weighted (weight = FGA) shot "
-        "quantity; stints below min_fga attributed shots are dropped.",
+        f"Outcome {outcome!r}: y is weighted by its own exposure denominator "
+        "(FGA for the shot outcomes; possessions/FGM for turnover/assist "
+        "rate); stints below min_fga of that exposure are dropped.",
         "Role clusters fit once on the full player-profile set (outcome-blind); "
         "the permuted-role placebo is the control.",
     )
@@ -240,7 +283,7 @@ def evaluate_mechanistic(
         min_fga=min_fga,
         n_stints_kept=len(full_kt),
         mean_outcome=mean_outcome,
-        shots_match_rate=attribution.match_rate,
+        match_rate=attribution.match_rate,
         role_pair_matrix=[list(row) for row in full_role.role_pair_matrix()],
         role_variance_components=full_role.variance_components(),
         holdouts=tuple(holdouts),
@@ -251,8 +294,8 @@ def evaluate_mechanistic(
 def transport_mechanistic(
     train_table: StintTable,
     test_table: StintTable,
-    train_attribution: ShotAttribution,
-    test_attribution: ShotAttribution,
+    train_attribution: MechanisticAttribution,
+    test_attribution: MechanisticAttribution,
     clustering: RoleClustering,
     *,
     outcome: str = "three_share",
