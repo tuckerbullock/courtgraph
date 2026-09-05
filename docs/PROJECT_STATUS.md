@@ -1,6 +1,8 @@
 # Project Status
 
-Last updated: 2026-09-05 (product side — real-data rung-3 lineup predictor, CLI + app)
+Last updated: 2026-09-05 (turnover/assist mechanistic outcomes — two more
+nulls; cycle-1 research report; product side — real-data rung-3 lineup
+predictor, CLI + app)
 
 ## Current phase
 
@@ -217,6 +219,16 @@ feed), not an independent lineage. No demonstrated betting edge exists.
     lift on lineup value (Phase A), across roster changes (transaction
     backtest), on individual production (Phase B), defensive side — **every
     estimand null.**
+  - **Cycle-1 research report (2026-09-04).** `docs/RESEARCH_REPORT.md` — a
+    standalone capstone document synthesising the whole arc for a reader who
+    hasn't followed it day to day.
+  - **Turnover rate & assist rate — two more mechanistic nulls (2026-09-05).**
+    New stint-level attribution (`courtgraph.features.stint_events`, 98.7 %
+    event match) extends the mechanistic-outcome ladder past `three_share`.
+    Both **null** under the full K-sweep + bootstrap-CI confirmation:
+    turnover_rate beats the placebo at only 1 of 6 K values (chance-level);
+    assist_rate never beats it. `docs/INTERACTION_FINDINGS.md` → "Turnover
+    rate & assist rate". Closes the mechanistic-outcome ladder as scoped.
   - **Real-data lineup predictor (2026-09-05, `task/rung3-lineup-predictor`).**
     The product-side first slice: `courtgraph fit-rung3` / `predict-rung3`
     persist a fitted rung-3 model and score an arbitrary 5-vs-5 lineup of
@@ -278,7 +290,7 @@ Exercise the vertical slice:
 uv run courtgraph demo --report demo_report.html --out-dir courtgraph_demo
 ```
 
-The current implementation passes 260 unit tests, Ruff, mypy over 74 source
+The current implementation passes 265 unit tests, Ruff, mypy over 74 source
 files, and JavaScript syntax validation. The multi-season pipeline was run end
 to end on the 8-season regular-season archive (2016-17 → 2024-25): 10,744
 games with all three inputs, **10,316 accepted, 428 quarantined (4.0 %),

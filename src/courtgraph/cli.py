@@ -159,11 +159,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tmech.add_argument(
         "--outcome",
-        choices=("three_share", "pts_per_shot", "rim_share"),
+        choices=(
+            "three_share",
+            "pts_per_shot",
+            "rim_share",
+            "turnover_rate",
+            "assist_rate",
+        ),
         default="three_share",
     )
     tmech.add_argument("--clusters", type=int, default=5)
-    tmech.add_argument("--min-fga", type=int, default=3)
+    tmech.add_argument(
+        "--min-fga",
+        type=int,
+        default=3,
+        help="drop stints below this many units of the outcome's own exposure "
+        "(FGA for shot outcomes; possessions for turnover_rate; FGM for "
+        "assist_rate -- pass a lower value, e.g. 1, for the latter two)",
+    )
     tmech.add_argument("--boot", type=int, default=2000)
     tmech.add_argument("--seed", type=int, default=0)
     tmech.add_argument("--json", action="store_true", help="print result as JSON")
@@ -220,14 +233,23 @@ def build_parser() -> argparse.ArgumentParser:
     confirm.add_argument(
         "--outcomes",
         default="three_share",
-        help="comma-separated mechanistic outcomes "
-        "(three_share, pts_per_shot, rim_share)",
+        help="comma-separated mechanistic outcomes (three_share, pts_per_shot, "
+        "rim_share, turnover_rate, assist_rate)",
     )
     confirm.add_argument(
         "--lineups", type=int, default=120, help="unseen-lineup holdout groups"
     )
     confirm.add_argument(
-        "--min-fga", type=int, default=3, help="drop stints below this many FGA"
+        "--min-fga",
+        type=int,
+        default=3,
+        help="drop stints below this many units of the outcome's own exposure "
+        "denominator -- FGA for pts_per_shot/rim_share/three_share, offensive "
+        "possessions for turnover_rate, FGM for assist_rate. The default (3) is "
+        "tuned for FGA; possessions and FGM run much smaller per stint (median "
+        "offensive possessions per stint is 3), so pass a lower value (e.g. 1) "
+        "for turnover_rate/assist_rate or it silently drops a large fraction "
+        "of stints",
     )
     confirm.add_argument(
         "--boot", type=int, default=2000, help="bootstrap resamples for the CI"
@@ -349,12 +371,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     mechanistic.add_argument(
         "--outcome",
-        choices=("pts_per_shot", "rim_share", "three_share"),
+        choices=(
+            "pts_per_shot",
+            "rim_share",
+            "three_share",
+            "turnover_rate",
+            "assist_rate",
+        ),
         default="pts_per_shot",
         help="the mechanistic target (default pts_per_shot)",
     )
     mechanistic.add_argument(
-        "--min-fga", type=int, default=3, help="drop stints below this many FGA"
+        "--min-fga",
+        type=int,
+        default=3,
+        help="drop stints below this many units of the outcome's own exposure "
+        "denominator -- FGA for pts_per_shot/rim_share/three_share, offensive "
+        "possessions for turnover_rate, FGM for assist_rate. The default (3) is "
+        "tuned for FGA; possessions and FGM run much smaller per stint (median "
+        "offensive possessions per stint is 3), so pass a lower value (e.g. 1) "
+        "for turnover_rate/assist_rate or it silently drops a large fraction "
+        "of stints",
     )
     mechanistic.add_argument(
         "--clusters", type=int, default=5, help="role clusters (default 5)"
@@ -916,21 +953,25 @@ def _cmd_transport(args: argparse.Namespace, stream: TextIO) -> int:
 
 
 def _cmd_transport_mechanistic(args: argparse.Namespace, stream: TextIO) -> int:
-    from courtgraph.chemistry.mechanistic import transport_mechanistic
+    from courtgraph.chemistry.mechanistic import EVENT_OUTCOMES, transport_mechanistic
     from courtgraph.chemistry.stints import read_stints
     from courtgraph.features.player_season import read_player_profiles
     from courtgraph.features.role_clusters import fit_role_clusters
+    from courtgraph.features.stint_events import attribute_play_events
     from courtgraph.features.stint_shots import attribute_shots
     from courtgraph.ingest.snapshot import SnapshotError, load_snapshot
 
     if args.boot < 100 or args.clusters < 2 or args.min_fga < 1:
         print("transport-mechanistic: bad --boot / --clusters / --min-fga", file=stream)
         return 2
+    attribute = (
+        attribute_play_events if args.outcome in EVENT_OUTCOMES else attribute_shots
+    )
     try:
         train = read_stints(args.train)
         test = read_stints(args.test)
-        train_attr = attribute_shots(load_snapshot(args.train_snapshot), train)
-        test_attr = attribute_shots(load_snapshot(args.test_snapshot), test)
+        train_attr = attribute(load_snapshot(args.train_snapshot), train)
+        test_attr = attribute(load_snapshot(args.test_snapshot), test)
         clustering = fit_role_clusters(
             read_player_profiles(args.profiles), n_clusters=args.clusters, seed=0
         )
@@ -1261,7 +1302,7 @@ def _cmd_mechanistic(args: argparse.Namespace, stream: TextIO) -> int:
     print(
         f"mechanistic [{result.outcome}]: {result.n_stints_kept} stints "
         f"(>= {result.min_fga} FGA), mean {result.mean_outcome:.3f}, "
-        f"shot match {result.shots_match_rate:.1%}",
+        f"match rate {result.match_rate:.1%}",
         file=stream,
     )
     vc = result.role_variance_components

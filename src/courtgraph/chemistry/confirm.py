@@ -32,12 +32,16 @@ from courtgraph.chemistry.baseline_ladder import (
 from courtgraph.chemistry.evaluate import _group_index, _rmse
 from courtgraph.chemistry.features import DesignMatrices, FeatureSpace
 from courtgraph.chemistry.hierarchical import HierarchicalRidge
-from courtgraph.chemistry.mechanistic import mechanistic_table_and_design
+from courtgraph.chemistry.mechanistic import (
+    EVENT_OUTCOMES,
+    mechanistic_table_and_design,
+)
 from courtgraph.chemistry.redundancy import RedundancyInteraction
 from courtgraph.chemistry.role_interaction import RoleClusterInteraction
 from courtgraph.chemistry.splits import SplitManifest, make_all_splits
 from courtgraph.chemistry.stints import StintTable
 from courtgraph.features.role_clusters import RoleClustering
+from courtgraph.features.stint_events import EventAttribution
 from courtgraph.features.stint_shots import ShotAttribution
 
 FloatArray = NDArray[np.float64]
@@ -133,8 +137,9 @@ def _row(
 def run_confirmation(
     table: StintTable,
     clustering_by_k: dict[int, RoleClustering],
-    attribution: ShotAttribution,
+    attribution: ShotAttribution | None,
     *,
+    event_attribution: EventAttribution | None = None,
     outcomes: tuple[str, ...] = ("three_share",),
     n_lineups: int = 120,
     n_boot: int = 2000,
@@ -235,11 +240,16 @@ def run_confirmation(
 
         # mechanistic outcomes on the same holdout
         for outcome in outcomes:
+            is_event = outcome in EVENT_OUTCOMES
+            attr = event_attribution if is_event else attribution
+            if attr is None:
+                needed = "event_attribution" if is_event else "attribution"
+                raise ValueError(f"outcome {outcome!r} needs {needed}")
             _, mech_train = mechanistic_table_and_design(
-                space, train_table, attribution, outcome, min_fga=min_fga
+                space, train_table, attr, outcome, min_fga=min_fga
             )
             mech_test_kt, mech_test = mechanistic_table_and_design(
-                space, test_table, attribution, outcome, min_fga=min_fga
+                space, test_table, attr, outcome, min_fga=min_fga
             )
             m_groups = _group_index(mech_test_kt, manifest)
             m_keys = list(m_groups)

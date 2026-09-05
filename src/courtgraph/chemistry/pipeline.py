@@ -292,9 +292,10 @@ def run_mechanistic(
     permuted-role-placebo on a mechanistic outcome (shot quality or shot mix).
     See :mod:`courtgraph.chemistry.mechanistic`."""
 
-    from courtgraph.chemistry.mechanistic import evaluate_mechanistic
+    from courtgraph.chemistry.mechanistic import EVENT_OUTCOMES, evaluate_mechanistic
     from courtgraph.features.player_season import read_player_profiles
     from courtgraph.features.role_clusters import fit_role_clusters
+    from courtgraph.features.stint_events import attribute_play_events
     from courtgraph.features.stint_shots import attribute_shots
     from courtgraph.ingest.snapshot import load_snapshot
 
@@ -302,7 +303,11 @@ def run_mechanistic(
     if len(table) < 50:
         raise ValueError(f"{stints_path}: only {len(table)} stints; need more")
     snapshot = load_snapshot(snapshot_dir)
-    attribution = attribute_shots(snapshot, table)
+    attribution = (
+        attribute_play_events(snapshot, table)
+        if outcome in EVENT_OUTCOMES
+        else attribute_shots(snapshot, table)
+    )
     clustering = fit_role_clusters(
         read_player_profiles(profiles_path), n_clusters=n_clusters, seed=seed
     )
@@ -437,8 +442,10 @@ def run_confirmation_file(
     See :mod:`courtgraph.chemistry.confirm`."""
 
     from courtgraph.chemistry.confirm import run_confirmation
+    from courtgraph.chemistry.mechanistic import EVENT_OUTCOMES
     from courtgraph.features.player_season import read_player_profiles
     from courtgraph.features.role_clusters import fit_role_clusters
+    from courtgraph.features.stint_events import attribute_play_events
     from courtgraph.features.stint_shots import attribute_shots
     from courtgraph.ingest.snapshot import load_snapshot
 
@@ -449,11 +456,16 @@ def run_confirmation_file(
     clustering_by_k = {
         k: fit_role_clusters(profiles, n_clusters=k, seed=0) for k in k_values
     }
-    attribution = attribute_shots(load_snapshot(snapshot_dir), table)
+    snapshot = load_snapshot(snapshot_dir)
+    needs_shots = any(o not in EVENT_OUTCOMES for o in outcomes)
+    needs_events = any(o in EVENT_OUTCOMES for o in outcomes)
+    attribution = attribute_shots(snapshot, table) if needs_shots else None
+    event_attribution = attribute_play_events(snapshot, table) if needs_events else None
     return run_confirmation(
         table,
         clustering_by_k,
         attribution,
+        event_attribution=event_attribution,
         outcomes=outcomes,
         n_lineups=n_lineups,
         n_boot=n_boot,
