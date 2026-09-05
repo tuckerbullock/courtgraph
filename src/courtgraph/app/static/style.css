@@ -857,3 +857,27 @@ footer span {
   .coverage-flow { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; }
   .coverage-flow span { min-width: 0; padding: 7px 4px; }
 }
+
+.predict-panel .panel-heading {
+  padding:20px 20px 12px}
+.predict-panel>.notice {
+  margin:0 20px 16px}
+.predict-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:18px;
+  padding:0 20px}
+.predict-side>label {
+  display:block;
+  margin-bottom:8px}
+.predict-side .player-selects {
+  padding:0}
+.predict-panel .context-fields {
+  margin:16px 20px 0}
+.predict-panel .actions {
+  padding:16px 20px}
+.predict-panel .comparison-panel {
+  margin:0 20px 20px}
+@media(max-width:820px) {
+  .predict-grid { grid-template-columns:1fr }
+}

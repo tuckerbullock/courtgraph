@@ -135,6 +135,24 @@ class ObservationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.data.query(minimum=0)
 
+    def test_player_pool_returns_the_observed_pool_not_a_roster(self) -> None:
+        offense_pool = self.data.player_pool("10")
+        self.assertEqual(
+            sorted(p["id"] for p in offense_pool["players"]), [1, 2, 3, 4, 5]
+        )
+        self.assertTrue(all(p["possessions"] == 40 for p in offense_pool["players"]))
+        self.assertIn("not an official roster", offense_pool["source"])
+
+        defense_pool = self.data.player_pool("20")
+        self.assertEqual(
+            sorted(p["id"] for p in defense_pool["players"]), [6, 7, 8, 9, 10]
+        )
+
+        with self.assertRaises(ValueError):
+            self.data.player_pool("")
+        with self.assertRaises(ValueError):
+            self.data.player_pool("999")
+
     def test_provenance_never_assumes_real_nba_or_independent_score_source(
         self,
     ) -> None:
@@ -442,6 +460,44 @@ class LocalHTTPTests(unittest.TestCase):
         ):
             self.assertEqual(self.request(path)[0], 404)
 
+    def test_player_pool_endpoint(self) -> None:
+        status, _headers, body = self.request("/api/player-pool?team=10")
+        self.assertEqual(status, 200)
+        payload = json.loads(body)
+        self.assertEqual(sorted(p["id"] for p in payload["players"]), [1, 2, 3, 4, 5])
+        self.assertEqual(self.request("/api/player-pool?team=999")[0], 400)
+        self.assertEqual(self.request("/api/player-pool?bogus=1")[0], 400)
+
+    def test_predict_real_endpoint_has_no_chemistry_field(self) -> None:
+        headers = {"Content-Type": "application/json", "X-CourtGraph-Request": "local"}
+        payload = {"offense": [1, 2, 3, 4, 5], "defense": [6, 7, 8, 9, 10]}
+        status, _headers, body = self.request(
+            "/api/predict-real",
+            method="POST",
+            body=json.dumps(payload),
+            headers=headers,
+        )
+        self.assertEqual(status, 200)
+        result = json.loads(body)
+        self.assertNotIn("interaction", result)
+        self.assertIn("total", result)
+        self.assertIn("interval_95", result)
+        self.assertIn("no interaction/chemistry term", result["note"])
+
+        bad = {"offense": [1, 2, 3, 4], "defense": [6, 7, 8, 9, 10]}
+        self.assertEqual(
+            self.request(
+                "/api/predict-real",
+                method="POST",
+                body=json.dumps(bad),
+                headers=headers,
+            )[0],
+            400,
+        )
+        self.assertEqual(
+            self.request("/api/predict-real", method="POST", body="{}")[0], 415
+        )
+
     def test_bad_filters_fail_and_empty_results_are_valid(self) -> None:
         for query in (
             "minimum=no",
@@ -466,6 +522,21 @@ class LocalHTTPTests(unittest.TestCase):
             self.assertFalse(
                 json.loads(connection.getresponse().read())["real"]["loaded"]
             )
+            connection.request("GET", "/api/player-pool?team=10")
+            self.assertEqual(connection.getresponse().status, 200)
+            predict_body = json.dumps(
+                {"offense": [1, 2, 3, 4, 5], "defense": [6, 7, 8, 9, 10]}
+            )
+            connection.request(
+                "POST",
+                "/api/predict-real",
+                body=predict_body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-CourtGraph-Request": "local",
+                },
+            )
+            self.assertEqual(connection.getresponse().status, 400)
         finally:
             connection.close()
             server.shutdown()

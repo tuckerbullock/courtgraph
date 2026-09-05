@@ -124,31 +124,47 @@ def make_server(
                     )
                 except ValueError as exc:
                     self._json(400, {"error": str(exc)})
+            elif url.path == "/api/player-pool":
+                if observations is None:
+                    self._json(200, {"players": [], "team": "", "source": ""})
+                    return
+                try:
+                    query = parse_qs(url.query, max_num_fields=2)
+                    if set(query) - {"team"}:
+                        raise ValueError("Unknown filter")
+                    self._json(
+                        200, observations.player_pool(query.get("team", [""])[0])
+                    )
+                except ValueError as exc:
+                    self._json(400, {"error": str(exc)})
             else:
                 self._json(404, {"error": "Not found"})
 
         def do_POST(self) -> None:
             if not self._trusted():
                 return
-            if self.path != "/api/compare":
+            if self.path not in ("/api/compare", "/api/predict-real"):
                 self._json(404, {"error": "Not found"})
                 return
             if (
                 self.headers.get("Content-Type") != "application/json"
                 or self.headers.get("X-CourtGraph-Request") != "local"
             ):
-                self._json(
-                    415, {"error": "Use the local app's JSON comparison request"}
-                )
+                self._json(415, {"error": "Use the local app's JSON request"})
                 return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 0 < length <= 16_384:
-                    raise ValueError("Comparison request must be 1–16384 bytes")
+                    raise ValueError("Request body must be 1-16384 bytes")
                 payload = json.loads(self.rfile.read(length))
                 if not isinstance(payload, dict):
-                    raise ValueError("Comparison must be a JSON object")
-                self._json(200, sandbox.compare(payload))
+                    raise ValueError("Request body must be a JSON object")
+                if self.path == "/api/compare":
+                    self._json(200, sandbox.compare(payload))
+                else:
+                    if observations is None:
+                        raise ValueError("No real ingest directory is loaded")
+                    self._json(200, observations.predict(payload))
             except (ValueError, UnicodeError) as exc:
                 self._json(400, {"error": str(exc)})
 

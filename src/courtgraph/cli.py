@@ -159,11 +159,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tmech.add_argument(
         "--outcome",
-        choices=("three_share", "pts_per_shot", "rim_share"),
+        choices=(
+            "three_share",
+            "pts_per_shot",
+            "rim_share",
+            "turnover_rate",
+            "assist_rate",
+        ),
         default="three_share",
     )
     tmech.add_argument("--clusters", type=int, default=5)
-    tmech.add_argument("--min-fga", type=int, default=3)
+    tmech.add_argument(
+        "--min-fga",
+        type=int,
+        default=3,
+        help="drop stints below this many units of the outcome's own exposure "
+        "(FGA for shot outcomes; possessions for turnover_rate; FGM for "
+        "assist_rate -- pass a lower value, e.g. 1, for the latter two)",
+    )
     tmech.add_argument("--boot", type=int, default=2000)
     tmech.add_argument("--seed", type=int, default=0)
     tmech.add_argument("--json", action="store_true", help="print result as JSON")
@@ -220,14 +233,23 @@ def build_parser() -> argparse.ArgumentParser:
     confirm.add_argument(
         "--outcomes",
         default="three_share",
-        help="comma-separated mechanistic outcomes "
-        "(three_share, pts_per_shot, rim_share)",
+        help="comma-separated mechanistic outcomes (three_share, pts_per_shot, "
+        "rim_share, turnover_rate, assist_rate)",
     )
     confirm.add_argument(
         "--lineups", type=int, default=120, help="unseen-lineup holdout groups"
     )
     confirm.add_argument(
-        "--min-fga", type=int, default=3, help="drop stints below this many FGA"
+        "--min-fga",
+        type=int,
+        default=3,
+        help="drop stints below this many units of the outcome's own exposure "
+        "denominator -- FGA for pts_per_shot/rim_share/three_share, offensive "
+        "possessions for turnover_rate, FGM for assist_rate. The default (3) is "
+        "tuned for FGA; possessions and FGM run much smaller per stint (median "
+        "offensive possessions per stint is 3), so pass a lower value (e.g. 1) "
+        "for turnover_rate/assist_rate or it silently drops a large fraction "
+        "of stints",
     )
     confirm.add_argument(
         "--boot", type=int, default=2000, help="bootstrap resamples for the CI"
@@ -349,12 +371,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     mechanistic.add_argument(
         "--outcome",
-        choices=("pts_per_shot", "rim_share", "three_share"),
+        choices=(
+            "pts_per_shot",
+            "rim_share",
+            "three_share",
+            "turnover_rate",
+            "assist_rate",
+        ),
         default="pts_per_shot",
         help="the mechanistic target (default pts_per_shot)",
     )
     mechanistic.add_argument(
-        "--min-fga", type=int, default=3, help="drop stints below this many FGA"
+        "--min-fga",
+        type=int,
+        default=3,
+        help="drop stints below this many units of the outcome's own exposure "
+        "denominator -- FGA for pts_per_shot/rim_share/three_share, offensive "
+        "possessions for turnover_rate, FGM for assist_rate. The default (3) is "
+        "tuned for FGA; possessions and FGM run much smaller per stint (median "
+        "offensive possessions per stint is 3), so pass a lower value (e.g. 1) "
+        "for turnover_rate/assist_rate or it silently drops a large fraction "
+        "of stints",
     )
     mechanistic.add_argument(
         "--clusters", type=int, default=5, help="role clusters (default 5)"
@@ -552,6 +589,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="override a context field (repeatable), e.g. --context playoff=1",
     )
     predict.add_argument("--json", action="store_true", help="print result as JSON")
+
+    fit_rung3 = subparsers.add_parser(
+        "fit-rung3",
+        help="fit rung 3 (empirical-Bayes hierarchical additive model, no "
+        "interaction term) on a real stint file",
+    )
+    fit_rung3.add_argument(
+        "--input", type=Path, required=True, help="stint file (.jsonl/.json)"
+    )
+    fit_rung3.add_argument(
+        "--model-out",
+        type=Path,
+        required=True,
+        help="where to write the rung-3 model artifact",
+    )
+    fit_rung3.add_argument("--json", action="store_true", help="print result as JSON")
+
+    predict_rung3 = subparsers.add_parser(
+        "predict-rung3",
+        help="score one 5-vs-5 lineup with a fitted rung-3 model -- additive "
+        "talent + context and a calibrated interval only, no chemistry claim",
+    )
+    predict_rung3.add_argument(
+        "--model", type=Path, required=True, help="rung-3 model artifact path"
+    )
+    predict_rung3.add_argument(
+        "--offense", required=True, help="5 comma-separated offensive player ids"
+    )
+    predict_rung3.add_argument(
+        "--defense", required=True, help="5 comma-separated defensive player ids"
+    )
+    predict_rung3.add_argument(
+        "--context",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="override a context field (repeatable), e.g. --context playoff=1",
+    )
+    predict_rung3.add_argument(
+        "--json", action="store_true", help="print result as JSON"
+    )
     return parser
 
 
@@ -875,21 +953,25 @@ def _cmd_transport(args: argparse.Namespace, stream: TextIO) -> int:
 
 
 def _cmd_transport_mechanistic(args: argparse.Namespace, stream: TextIO) -> int:
-    from courtgraph.chemistry.mechanistic import transport_mechanistic
+    from courtgraph.chemistry.mechanistic import EVENT_OUTCOMES, transport_mechanistic
     from courtgraph.chemistry.stints import read_stints
     from courtgraph.features.player_season import read_player_profiles
     from courtgraph.features.role_clusters import fit_role_clusters
+    from courtgraph.features.stint_events import attribute_play_events
     from courtgraph.features.stint_shots import attribute_shots
     from courtgraph.ingest.snapshot import SnapshotError, load_snapshot
 
     if args.boot < 100 or args.clusters < 2 or args.min_fga < 1:
         print("transport-mechanistic: bad --boot / --clusters / --min-fga", file=stream)
         return 2
+    attribute = (
+        attribute_play_events if args.outcome in EVENT_OUTCOMES else attribute_shots
+    )
     try:
         train = read_stints(args.train)
         test = read_stints(args.test)
-        train_attr = attribute_shots(load_snapshot(args.train_snapshot), train)
-        test_attr = attribute_shots(load_snapshot(args.test_snapshot), test)
+        train_attr = attribute(load_snapshot(args.train_snapshot), train)
+        test_attr = attribute(load_snapshot(args.test_snapshot), test)
         clustering = fit_role_clusters(
             read_player_profiles(args.profiles), n_clusters=args.clusters, seed=0
         )
@@ -1220,7 +1302,7 @@ def _cmd_mechanistic(args: argparse.Namespace, stream: TextIO) -> int:
     print(
         f"mechanistic [{result.outcome}]: {result.n_stints_kept} stints "
         f"(>= {result.min_fga} FGA), mean {result.mean_outcome:.3f}, "
-        f"shot match {result.shots_match_rate:.1%}",
+        f"match rate {result.match_rate:.1%}",
         file=stream,
     )
     vc = result.role_variance_components
@@ -1567,6 +1649,75 @@ def _cmd_predict(args: argparse.Namespace, stream: TextIO) -> int:
     return 0
 
 
+def _cmd_fit_rung3(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import fit_rung3_file
+
+    try:
+        model, path = fit_rung3_file(args.input, args.model_out)
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"fit-rung3: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        payload = {
+            "model_path": str(path),
+            "variance_components": model.variance_components(),
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True), file=stream)
+        return 0
+    vc = model.variance_components()
+    print(f"fit-rung3: wrote {path}", file=stream)
+    print(
+        f"  sigma {vc['sigma']:.2f}  tau_off {vc['tau_off']:.3f}  "
+        f"tau_def {vc['tau_def']:.3f}  converged {vc['converged']} "
+        f"({vc['n_iters']} EM iters)",
+        file=stream,
+    )
+    return 0
+
+
+def _cmd_predict_rung3(args: argparse.Namespace, stream: TextIO) -> int:
+    from courtgraph.chemistry.pipeline import predict_lineup_rung3
+
+    try:
+        result = predict_lineup_rung3(
+            args.model,
+            _parse_ids(args.offense),
+            _parse_ids(args.defense),
+            context=_parse_context(args.context),
+        )
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        print(f"predict-rung3: {exc}", file=stream)
+        return 2
+
+    if args.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True), file=stream)
+        return 0
+    print(
+        f"offense {list(result.offense)}  vs  defense {list(result.defense)}",
+        file=stream,
+    )
+    print(f"  talent (T)   {result.talent:8.2f}", file=stream)
+    print(f"  context (K)  {result.context_value:8.2f}", file=stream)
+    print(
+        f"  total value  {result.total:8.2f}   points per 100 possessions  "
+        f"(sd {result.predictive_sd:.2f})",
+        file=stream,
+    )
+    lo80, hi80 = result.interval_80
+    lo95, hi95 = result.interval_95
+    print(f"  80% interval [{lo80:+.2f}, {hi80:+.2f}]", file=stream)
+    print(f"  95% interval [{lo95:+.2f}, {hi95:+.2f}]", file=stream)
+    unseen = result.support["unseen_offense_players"]
+    print(
+        f"  min player exposure {result.support['min_offense_player_possessions']} "
+        "possessions" + (f"  |  unseen players {unseen}" if unseen else ""),
+        file=stream,
+    )
+    print(f"  {result.as_dict()['note']}", file=stream)
+    return 0
+
+
 def _cmd_app(args: argparse.Namespace, stream: TextIO) -> int:
     from courtgraph.app.server import serve
 
@@ -1594,6 +1745,8 @@ _COMMANDS = {
     "player-features": _cmd_player_features,
     "player-production": _cmd_player_production,
     "predict": _cmd_predict,
+    "fit-rung3": _cmd_fit_rung3,
+    "predict-rung3": _cmd_predict_rung3,
 }
 
 

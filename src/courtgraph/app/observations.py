@@ -59,6 +59,8 @@ class Observations:
             ):
                 raise ValueError(f"display names for {kind} must be strings")
             self.names[kind] = {str(k): v for k, v in values.items()}
+        self._rung3_model: Any = None
+        self._rung3_metadata: dict[str, Any] = {}
 
     def team_name(self, team: int | str) -> str:
         return self.names["teams"].get(str(team), f"Team {team}")
@@ -247,3 +249,97 @@ class Observations:
                 "filters lineup rows only."
             ),
         }
+
+    def player_pool(self, team: str) -> dict[str, Any]:
+        """Players observed on this team's offense or defense anywhere in the
+        loaded ingest window -- an *inferred exposure set*, not an official
+        roster. A player who barely played, or who joined/left mid-window,
+        may be over- or under-represented; there is no dated roster source."""
+
+        if not team:
+            raise ValueError("team is required")
+        possessions: Counter[int] = Counter()
+        for stint in self.table:
+            if str(stint.offense_team_id) == team:
+                for pid in stint.offense_player_ids:
+                    possessions[pid] += stint.offensive_possessions
+            elif str(stint.defense_team_id) == team:
+                for pid in stint.defense_player_ids:
+                    possessions[pid] += stint.offensive_possessions
+        if not possessions:
+            raise ValueError(f"no players observed for team {team!r}")
+        players = [
+            {"id": pid, "name": self.player_name(pid), "possessions": poss}
+            for pid, poss in sorted(possessions.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+        return {
+            "team": self.team_name(team),
+            "players": players,
+            "source": (
+                "Observed in stints for this team in the loaded ingest "
+                "window, not an official roster."
+            ),
+        }
+
+    def _ensure_rung3(self) -> tuple[Any, dict[str, Any]]:
+        if self._rung3_model is None:
+            from courtgraph.chemistry.features import FeatureSpace
+            from courtgraph.chemistry.hierarchical import HierarchicalRidge
+
+            space = FeatureSpace.from_training(self.table)
+            design = space.build(self.table)
+            self._rung3_model = HierarchicalRidge.fit(design, space)
+            possessions: Counter[int] = Counter()
+            for stint in self.table:
+                for pid in stint.offense_player_ids:
+                    possessions[pid] += stint.offensive_possessions
+            self._rung3_metadata = {
+                "training_player_possessions": {
+                    str(k): v for k, v in possessions.items()
+                }
+            }
+        return self._rung3_model, self._rung3_metadata
+
+    @staticmethod
+    def _lineup_ids(raw: Any, label: str) -> list[int]:
+        if (
+            not isinstance(raw, list)
+            or len(raw) != 5
+            or any(type(p) is not int for p in raw)
+        ):
+            raise ValueError(f"{label} must be exactly five integer player ids")
+        return list(raw)
+
+    def predict(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Score a real 5-vs-5 lineup with rung 3 -- additive talent + context
+        and a calibrated interval, fit once (lazily, cached) on this
+        ingest's stints. No chemistry/interaction claim; see
+        :data:`courtgraph.chemistry.pipeline.RUNG3_NOTE`."""
+
+        if set(payload) - {"offense", "defense", "home", "playoff", "rest"}:
+            raise ValueError("Unknown prediction field")
+        offense = self._lineup_ids(payload.get("offense"), "offense")
+        defense = self._lineup_ids(payload.get("defense"), "defense")
+        home, playoff, rest = (
+            payload.get("home", True),
+            payload.get("playoff", False),
+            payload.get("rest", 1),
+        )
+        if (
+            type(home) is not bool
+            or type(playoff) is not bool
+            or type(rest) is not int
+            or not 0 <= rest <= 7
+        ):
+            raise ValueError(
+                "Invalid context: home/playoff must be booleans and rest 0-7 days"
+            )
+        context = {"home_offense": home, "playoff": playoff, "days_rest_offense": rest}
+
+        from courtgraph.chemistry.pipeline import _predict_lineup_rung3_with_model
+
+        model, meta = self._ensure_rung3()
+        result = _predict_lineup_rung3_with_model(
+            model, meta, offense, defense, context
+        )
+        return result.as_dict()

@@ -292,9 +292,10 @@ def run_mechanistic(
     permuted-role-placebo on a mechanistic outcome (shot quality or shot mix).
     See :mod:`courtgraph.chemistry.mechanistic`."""
 
-    from courtgraph.chemistry.mechanistic import evaluate_mechanistic
+    from courtgraph.chemistry.mechanistic import EVENT_OUTCOMES, evaluate_mechanistic
     from courtgraph.features.player_season import read_player_profiles
     from courtgraph.features.role_clusters import fit_role_clusters
+    from courtgraph.features.stint_events import attribute_play_events
     from courtgraph.features.stint_shots import attribute_shots
     from courtgraph.ingest.snapshot import load_snapshot
 
@@ -302,7 +303,11 @@ def run_mechanistic(
     if len(table) < 50:
         raise ValueError(f"{stints_path}: only {len(table)} stints; need more")
     snapshot = load_snapshot(snapshot_dir)
-    attribution = attribute_shots(snapshot, table)
+    attribution = (
+        attribute_play_events(snapshot, table)
+        if outcome in EVENT_OUTCOMES
+        else attribute_shots(snapshot, table)
+    )
     clustering = fit_role_clusters(
         read_player_profiles(profiles_path), n_clusters=n_clusters, seed=seed
     )
@@ -437,8 +442,10 @@ def run_confirmation_file(
     See :mod:`courtgraph.chemistry.confirm`."""
 
     from courtgraph.chemistry.confirm import run_confirmation
+    from courtgraph.chemistry.mechanistic import EVENT_OUTCOMES
     from courtgraph.features.player_season import read_player_profiles
     from courtgraph.features.role_clusters import fit_role_clusters
+    from courtgraph.features.stint_events import attribute_play_events
     from courtgraph.features.stint_shots import attribute_shots
     from courtgraph.ingest.snapshot import load_snapshot
 
@@ -449,11 +456,16 @@ def run_confirmation_file(
     clustering_by_k = {
         k: fit_role_clusters(profiles, n_clusters=k, seed=0) for k in k_values
     }
-    attribution = attribute_shots(load_snapshot(snapshot_dir), table)
+    snapshot = load_snapshot(snapshot_dir)
+    needs_shots = any(o not in EVENT_OUTCOMES for o in outcomes)
+    needs_events = any(o in EVENT_OUTCOMES for o in outcomes)
+    attribution = attribute_shots(snapshot, table) if needs_shots else None
+    event_attribution = attribute_play_events(snapshot, table) if needs_events else None
     return run_confirmation(
         table,
         clustering_by_k,
         attribution,
+        event_attribution=event_attribution,
         outcomes=outcomes,
         n_lineups=n_lineups,
         n_boot=n_boot,
@@ -509,6 +521,180 @@ def predict_lineup(
         support=model.lineup_support(off_t),
         interaction_interval=model.interaction_interval(off_t),
         model_metadata=meta,
+    )
+
+
+# z-scores for a Gaussian predictive interval (rung 3's posterior + noise SD).
+_Z_80 = 1.2816
+_Z_95 = 1.9600
+
+RUNG3_NOTE = (
+    "Additive talent + context only -- no interaction/chemistry term. "
+    "Lineup chemistry is not a supported predictive effect on scoring "
+    "(research cycle 1; see docs/RESEARCH_REPORT.md)."
+)
+
+
+@dataclass(frozen=True)
+class Rung3PredictionResult:
+    """A rung-3 (empirical-Bayes hierarchical additive) prediction for one
+    5-vs-5 lineup. Deliberately has no interaction/chemistry field -- rung 3
+    has none, and every symmetric/asymmetric interaction form tested on real
+    data was null (`docs/RESEARCH_REPORT.md`)."""
+
+    offense: tuple[int, ...]
+    defense: tuple[int, ...]
+    context: dict[str, Any]
+    talent: float
+    context_value: float
+    total: float
+    predictive_sd: float
+    interval_80: tuple[float, float]
+    interval_95: tuple[float, float]
+    support: dict[str, Any]
+    model_metadata: dict[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "offense": list(self.offense),
+            "defense": list(self.defense),
+            "context": dict(self.context),
+            "talent": self.talent,
+            "context_value": self.context_value,
+            "total": self.total,
+            "predictive_sd": self.predictive_sd,
+            "interval_80": list(self.interval_80),
+            "interval_95": list(self.interval_95),
+            "support": dict(self.support),
+            "model_metadata": dict(self.model_metadata),
+            "note": RUNG3_NOTE,
+        }
+
+
+def fit_rung3_file(
+    input_path: str | Path,
+    model_out: str | Path,
+    *,
+    config: Any | None = None,
+) -> tuple[Any, Path]:
+    """Fit rung 3 (empirical-Bayes hierarchical additive model, no interaction
+    term) on a real stint file and persist it via
+    :mod:`courtgraph.chemistry.rung3_artifact`."""
+
+    from courtgraph.chemistry import rung3_artifact
+    from courtgraph.chemistry.features import FeatureSpace
+    from courtgraph.chemistry.hierarchical import HierarchicalConfig, HierarchicalRidge
+
+    table = read_stints(input_path)
+    if len(table) < 50:
+        raise ValueError(
+            f"{input_path}: only {len(table)} stints; need a substantially larger "
+            "table to fit rung 3"
+        )
+    space = FeatureSpace.from_training(table)
+    design = space.build(table)
+    model = HierarchicalRidge.fit(
+        design, space, config=config if isinstance(config, HierarchicalConfig) else None
+    )
+
+    possessions: dict[int, int] = {}
+    for stint in table:
+        for pid in stint.offense_player_ids:
+            possessions[pid] = possessions.get(pid, 0) + stint.offensive_possessions
+
+    path = rung3_artifact.save_model(
+        model,
+        model_out,
+        metadata={
+            "source": str(input_path),
+            "stints": len(table),
+            "possessions": table.total_possessions(),
+            "training_player_possessions": {str(k): v for k, v in possessions.items()},
+        },
+    )
+    return model, path
+
+
+def predict_lineup_rung3(
+    model_path: str | Path,
+    offense: list[int],
+    defense: list[int],
+    *,
+    context: dict[str, Any] | None = None,
+) -> Rung3PredictionResult:
+    """Score an arbitrary 5-vs-5 lineup with a fitted rung-3 model. Additive
+    talent + context and a calibrated predictive interval only -- see
+    :data:`RUNG3_NOTE`."""
+
+    from courtgraph.chemistry import rung3_artifact
+
+    model, meta = rung3_artifact.load_model(model_path)
+    return _predict_lineup_rung3_with_model(model, meta, offense, defense, context)
+
+
+def _predict_lineup_rung3_with_model(
+    model: Any,
+    meta: dict[str, Any],
+    offense: list[int],
+    defense: list[int],
+    context: dict[str, Any] | None,
+) -> Rung3PredictionResult:
+    if len(offense) != LINEUP_SIZE or len(defense) != LINEUP_SIZE:
+        raise ValueError("offense and defense each need exactly 5 player ids")
+    if len(set(offense)) != LINEUP_SIZE or len(set(defense)) != LINEUP_SIZE:
+        raise ValueError("offense and defense player ids must be distinct")
+    if set(offense) & set(defense):
+        raise ValueError("a player cannot be on both offense and defense")
+
+    import numpy as np
+
+    from courtgraph.chemistry.chemistry_model import _reference_stint
+    from courtgraph.chemistry.stints import StintTable
+
+    merged = {**DEFAULT_CONTEXT, **(context or {})}
+    off_t = tuple(sorted(int(p) for p in offense))
+    def_t = tuple(sorted(int(p) for p in defense))
+
+    stint = _reference_stint(off_t, def_t, merged)
+    design = model.feature_space.build(StintTable.from_stints([stint]))
+    add = model.decompose_row(design, 0)
+    point, sd, _w = model.group_predictive(
+        design, {"lineup": np.array([0], dtype=np.int64)}
+    )["lineup"]
+
+    index = model.feature_space.player_index()
+    unseen_off = tuple(p for p in off_t if p not in index)
+    unseen_def = tuple(p for p in def_t if p not in index)
+    poss_table = {
+        int(k): int(v) for k, v in meta.get("training_player_possessions", {}).items()
+    }
+    off_poss = [poss_table.get(p, 0) for p in off_t]
+    support = {
+        "unseen_offense_players": list(unseen_off),
+        "unseen_defense_players": list(unseen_def),
+        "min_offense_player_possessions": min(off_poss) if off_poss else 0,
+        "median_offense_player_possessions": (
+            float(np.median(off_poss)) if off_poss else 0.0
+        ),
+    }
+
+    # the full per-player training-possessions table (hundreds/thousands of
+    # entries) is only an input to `support` above; keep it out of the
+    # per-prediction metadata so a JSON result stays readable.
+    small_meta = {k: v for k, v in meta.items() if k != "training_player_possessions"}
+
+    return Rung3PredictionResult(
+        offense=off_t,
+        defense=def_t,
+        context=merged,
+        talent=add.talent,
+        context_value=add.context,
+        total=float(point),
+        predictive_sd=float(sd),
+        interval_80=(float(point - _Z_80 * sd), float(point + _Z_80 * sd)),
+        interval_95=(float(point - _Z_95 * sd), float(point + _Z_95 * sd)),
+        support=support,
+        model_metadata=small_meta,
     )
 
 
