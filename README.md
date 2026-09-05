@@ -145,7 +145,25 @@ identity-keyed teammate chemistry is **not supported**, and of three
 role-conditioned positives only one survives a properly-powered test — lineups
 predictably shift their **three-point-attempt share** (not their scoring) away
 from the sum of the individuals' tendencies. The standing record is
-[`docs/INTERACTION_FINDINGS.md`](docs/INTERACTION_FINDINGS.md).
+[`docs/INTERACTION_FINDINGS.md`](docs/INTERACTION_FINDINGS.md); a standalone
+capstone write-up for a reader who hasn't followed it day to day is
+[`docs/RESEARCH_REPORT.md`](docs/RESEARCH_REPORT.md).
+
+## Real-lineup prediction (`fit-rung3` / `predict-rung3`)
+
+Since chemistry isn't supported, the one thing worth predicting *from* is
+rung 3 itself — the calibrated additive model. `fit-rung3` persists a fitted
+rung-3 model (its own artifact format, distinct from the synthetic
+`ChemistryModel` artifact `fit`/`predict` use); `predict-rung3` scores an
+arbitrary 5-vs-5 lineup from real observed players — additive talent +
+context and a Gaussian predictive interval, with **no interaction/chemistry
+field anywhere in the result**:
+
+```bash
+uv run courtgraph fit-rung3 --input ingest_out/stints.jsonl --model-out rung3.json
+uv run courtgraph predict-rung3 --model rung3.json \
+    --offense 1001,1002,1003,1004,1005 --defense 1006,1007,1008,1009,1010
+```
 
 ## Local browser app (`courtgraph app`)
 
@@ -200,6 +218,14 @@ source provenance, score reconciliation, and quarantined games. Rates are
 weighting, adjustment, or chemistry prediction. The minimum-sample filter
 changes displayed lineup rows, not the selection totals. Loaded participants
 are not a complete team roster.
+
+The explorer also has a **Predict a real lineup** panel: pick an offense
+team and a defense team, pick five players each from the players observed on
+that team in the loaded window (explicitly labeled as inferred exposure, not
+an official roster), and get the same rung-3 additive prediction
+`predict-rung3` produces — fit once, lazily, on first use, and cached for the
+life of the server process. No chemistry/interaction claim anywhere in the
+result.
 
 The server binds only to `127.0.0.1`; `--port` defaults to 8765 (use another port
 if occupied). It serves only its bundled assets and these explicitly loaded

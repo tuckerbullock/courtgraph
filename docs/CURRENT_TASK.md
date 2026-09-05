@@ -1,8 +1,44 @@
 # Current Task
 
-Last updated: 2026-09-01
+Last updated: 2026-09-05
 
-## Active — the "could still flip it" arc (user: "yesss all of these")
+## Active — real-data lineup predictor (product side) — DONE
+
+`task/rung3-lineup-predictor`. After the interaction arc closed (below) the
+user asked to switch to the product side (issue #8 / master plan §44).
+Issue #8's flagship feature ranks lineups by "chemistry surplus" — not
+buildable as specified, since chemistry isn't a supported predictive effect.
+This task builds the honest version: a user can pick any 5-vs-5 lineup from
+real, observed NBA players and get the one validated result (rung 3's
+calibrated additive prediction), with no interaction/chemistry field
+anywhere in the code path.
+
+- New `rung3_artifact.py` (its own schema, distinct from the synthetic
+  `ChemistryModel` artifact) + `fit_rung3_file`/`predict_lineup_rung3` in
+  `pipeline.py`, reusing `HierarchicalRidge`'s existing `decompose_row` /
+  `group_predictive` — no new model math needed, only packaging.
+- New CLI: `courtgraph fit-rung3`, `courtgraph predict-rung3`.
+- App: `Observations.player_pool(team)` (observed-in-stints, explicitly not
+  an official roster — no dated roster source exists) and
+  `Observations.predict()` (rung 3 fit once, lazily, cached in memory); new
+  endpoints `GET /api/player-pool`, `POST /api/predict-real`; a new frontend
+  panel in the Game explorer view with a permanent no-chemistry-claim banner.
+- Manually end-to-end tested against the real 297k-stint dataset (curl +
+  browser-driven click-through), which caught and fixed two real bugs: an
+  id mismatch between `index.html`'s player-select containers and
+  `app.js` (dropdowns silently failed to populate) and a bloated API
+  response (the full per-player possessions table, hundreds of entries, was
+  being echoed on every prediction — trimmed since `support` already
+  summarizes what's needed).
+- 260 tests (7 new), ruff/mypy/dependency-free path clean. 2 commits on the
+  branch.
+
+Not done (explicitly out of scope, documented in the plan): anything ranked
+by chemistry surplus, league-wide lineup finder, real dated rosters,
+opponent counter-lineups — all remain backlog until a future estimand
+overturns the current null, or a roster data source is acquired.
+
+## Completed — the "could still flip it" arc (user: "yesss all of these")
 
 Different estimands, not "does γ_ij exist". Order: **D → B → C → E.**
 
@@ -43,7 +79,8 @@ one null.** Symmetric pairs (rungs 4–5), pooled asymmetric lift on lineup
 value (Phase A), across roster changes (transaction backtest, best-powered),
 on individual production (Phase B), defensive side. The interaction question
 has a defensible, comprehensive answer: **not supported.** Next candidate
-work: the cycle-1 research report, or the product side (§44 / issue #8).
+work at the time: the cycle-1 research report, or the product side (§44 /
+issue #8) — the product side's first slice is done above.
 
 ---
 
@@ -148,7 +185,10 @@ Full write-up in `docs/INTERACTION_FINDINGS.md` → "At 2× the data".
 10. **Contract deliverables** — strong unseen-pair holdout; seed stability;
     cycle-1 report; decision log.
 11. **2025-26** — needs the live fetch or a `cdnnba`→pbp importer path.
-12. **Product (§44 / issue #8)**.
+12. **Product (§44 / issue #8)** — first slice done (rung-3 real-lineup
+    predictor, above). Remaining: real dated rosters, league-wide finder,
+    opponent counter-lineups, and everything else in issue #8 that depends
+    on data or model support this slice doesn't have.
 
 Each item lands as its own focused branch + PR. `ChemistryConfig` /
 `HierarchicalConfig` / `RoleInteractionConfig` / `RedundancyConfig` defaults
